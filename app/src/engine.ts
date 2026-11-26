@@ -548,7 +548,14 @@ function effectWeight(name: string, role: EquipRole, context: EquipContext, mode
   return 0.35
 }
 
-function slotScore(text: string, role: EquipRole, context: EquipContext, mode: EquipMode): number {
+function slotScore(
+  text: string,
+  role: EquipRole,
+  context: EquipContext,
+  mode: EquipMode,
+  teamContext?: TeamContext,
+  tagLookup?: Map<string, number>
+): number {
   let total = 0
   for (const effect of parseEffects(text)) {
     if (effect.max === 0) {
@@ -557,6 +564,77 @@ function slotScore(text: string, role: EquipRole, context: EquipContext, mode: E
     }
     total += Math.min(effect.max, 120) * effectWeight(effect.name, role, context, mode)
   }
+  if (teamContext && tagLookup) {
+    total += teamConditionalValue(text, teamContext, tagLookup) * (context === 'core' ? 1 : 0.8)
+  }
+  return total
+}
+
+export interface TeamContext {
+  count: number
+  tagCounts: Map<number, number>
+}
+
+export function buildTeamContext(units: ScoredUnit[]): TeamContext {
+  const tagCounts = new Map<number, number>()
+  for (const unit of units) {
+    for (const tagId of unit.character.tags) {
+      tagCounts.set(tagId, (tagCounts.get(tagId) ?? 0) + 1)
+    }
+  }
+  return { count: units.length, tagCounts }
+}
+
+export function buildTagLookup(tags: TagInfo[]): Map<string, number> {
+  const lookup = new Map<string, number>()
+  for (const tag of tags) lookup.set(normalizeText(tag.name), tag.id)
+  return lookup
+}
+
+function resolveTagName(fragment: string, lookup: Map<string, number>): number | undefined {
+  const name = normalizeText(fragment)
+  if (!name) return undefined
+  let id = lookup.get(name)
+  if (id === undefined) {
+    for (const [knownName, knownId] of lookup) {
+      if (knownName.length >= 4 && name.includes(knownName)) {
+        id = knownId
+        break
+      }
+    }
+  }
+  if (id === undefined) {
+    for (const [knownName, knownId] of lookup) {
+      if (knownName.length >= 5 && knownName.includes(name)) {
+        id = knownId
+        break
+      }
+    }
+  }
+  return id
+}
+
+const SCALE_CONDITIONAL_RE =
+  /([\d.]+)%\s*(?:[~-]\s*([\d.]+)\s*%)?\s*por cada luchador de (?:etiqueta|estilo de lucha tipo) ([^.,;]+)/gi
+const FLAT_CONDITIONAL_RE =
+  /([\d.]+)%\s*(?:si hay algún luchador de (?:etiqueta|estilo de lucha tipo)|para aliados de etiqueta|para tu equipo de etiqueta)\s*([^.,;()]+)(\s*\(sin contarte\))?/gi
+
+/** Efectos condicionales: "X% por cada luchador de etiqueta Y" o "X% si hay algún luchador de etiqueta Y". */
+function teamConditionalValue(text: string, ctx: TeamContext, lookup: Map<string, number>): number {
+  let total = 0
+  for (const match of text.matchAll(SCALE_CONDITIONAL_RE)) {
+    const value = Number(match[2] ?? match[1])
+    const id = resolveTagName(match[3], lookup)
+    if (id !== undefined) total += value * Math.min(ctx.tagCounts.get(id) ?? 0, ctx.count)
+  }
+  for (const match of text.matchAll(FLAT_CONDITIONAL_RE)) {
+    const value = Number(match[1])
+    const id = resolveTagName(match[2], lookup)
+    if (id === undefined) continue
+    const excludesSelf = Boolean(match[3])
+    const carriers = ctx.tagCounts.get(id) ?? 0
+    if (carriers > (excludesSelf ? 1 : 0)) total += value
+  }
   return total
 }
 
@@ -564,17 +642,45 @@ export function equipmentScore(
   equip: Equipment,
   character: Character,
   context: EquipContext = 'core',
-  mode: EquipMode = 'attack'
+  mode: EquipMode = 'attack',
+  teamContext?: TeamContext,
+  tagLookup?: Map<string, number>
 ): number {
   const role = equipRole(character)
   const base = EQUIP_RARITY_SCORE[equip.rarityLabel] ?? 20
   let effects = 0
   for (const slot of equip.slots ?? []) {
     let best = 0
-    for (const option of slot.options) best = Math.max(best, slotScore(option, role, context, mode))
+    for (const option of slot.options) {
+      best = Math.max(best, slotScore(option, role, context, mode, teamContext, tagLookup))
+    }
     effects += Math.min(best, 90)
   }
   return base + effects * 0.5
+}
+
+/** Texto corto que explica el bonus condicional aprovechado por el equipo (ej. "×3 Saiyajin"). */
+export function teamConditionalHint(
+  equip: Equipment,
+  teamContext?: TeamContext,
+  tagLookup?: Map<string, number>
+): string | null {
+  if (!teamContext || !tagLookup) return null
+  for (const slot of equip.slots ?? []) {
+    for (const option of slot.options) {
+      for (const match of option.matchAll(SCALE_CONDITIONAL_RE)) {
+        const id = resolveTagName(match[3], tagLookup)
+        const count = id !== undefined ? teamContext.tagCounts.get(id) ?? 0 : 0
+        if (count > 0) return `×${Math.min(count, teamContext.count)} ${match[3].trim()}`
+      }
+      for (const match of option.matchAll(FLAT_CONDITIONAL_RE)) {
+        const id = resolveTagName(match[2], tagLookup)
+        const carriers = id !== undefined ? teamContext.tagCounts.get(id) ?? 0 : 0
+        if (carriers > (match[3] ? 1 : 0)) return `✓ ${match[2].trim()}`
+      }
+    }
+  }
+  return null
 }
 
 export interface EquipmentHighlights {
@@ -587,7 +693,9 @@ export function equipmentHighlights(
   equip: Equipment,
   character: Character,
   context: EquipContext = 'core',
-  mode: EquipMode = 'attack'
+  mode: EquipMode = 'attack',
+  teamContext?: TeamContext,
+  tagLookup?: Map<string, number>
 ): EquipmentHighlights {
   const role = equipRole(character)
   const slots: string[] = []
@@ -597,7 +705,7 @@ export function equipmentHighlights(
     let bestOption = ''
     let bestValue = -1
     for (const option of slot.options) {
-      const value = slotScore(option, role, context, mode)
+      const value = slotScore(option, role, context, mode, teamContext, tagLookup)
       if (value > bestValue) {
         bestValue = value
         bestOption = option
@@ -650,7 +758,12 @@ export function recommendEquipment(
   character: Character,
   equipment: Equipment[],
   userEquipment: Record<string, OwnedEquipment>,
-  options: { context?: EquipContext; mode?: EquipMode } = {}
+  options: {
+    context?: EquipContext
+    mode?: EquipMode
+    teamContext?: TeamContext
+    tagLookup?: Map<string, number>
+  } = {}
 ): EquipmentRecommendation {
   const context = options.context ?? 'core'
   const mode = options.mode ?? 'attack'
@@ -658,7 +771,7 @@ export function recommendEquipment(
     .filter((e) => equipmentUsableBy(e, character))
     .map((e) => ({
       equip: e,
-      score: equipmentScore(e, character, context, mode),
+      score: equipmentScore(e, character, context, mode, options.teamContext, options.tagLookup),
       owned: userEquipment[String(e.id)] ?? null
     }))
 
@@ -676,12 +789,14 @@ export function teamEquipment(
   team: TeamPlan,
   equipment: Equipment[],
   userEquipment: Record<string, OwnedEquipment>,
-  mode: EquipMode = 'attack'
+  mode: EquipMode = 'attack',
+  tagLookup?: Map<string, number>
 ): EquipmentRecommendation[] {
-  return [
-    ...team.core.map((u) => recommendEquipment(u.character, equipment, userEquipment, { context: 'core', mode })),
-    ...team.bench.map((u) => recommendEquipment(u.character, equipment, userEquipment, { context: 'bench', mode }))
-  ]
+  // Sólo el núcleo combate; el banquillo aporta Habilidad Z y no se equipa.
+  const teamContext = buildTeamContext(team.core)
+  return team.core.map((u) =>
+    recommendEquipment(u.character, equipment, userEquipment, { context: 'core', mode, teamContext, tagLookup })
+  )
 }
 
 

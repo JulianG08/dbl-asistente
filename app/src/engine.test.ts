@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Banner, Box, Character, Equipment, GameEvent, MetaData } from './types'
 import {
   abilityBonus,
+  buildTeamContext,
   completeTeam,
   equipmentScore,
   equipmentUsableBy,
@@ -13,6 +14,8 @@ import {
   planEvents,
   recommendEquipment,
   recommendTeams,
+  teamConditionalHint,
+  teamEquipment,
   unitScore,
   zAbilityLevelFor
 } from './engine'
@@ -454,5 +457,138 @@ describe('metaCoverage', () => {
     expect(coverage.byTier.Z).toEqual({ total: 1, owned: 1 })
     expect(coverage.byTier.S).toEqual({ total: 1, owned: 0 })
     expect(coverage.gaps.map((gap) => gap.card)).toEqual(['DBL2'])
+  })
+})
+
+describe('equipamiento según equipo', () => {
+  const teamEquip = (id: number, text: string): Equipment => ({
+    id,
+    name: `Equip ${id}`,
+    rarity: 3,
+    rarityLabel: 'Gold',
+    icon: '',
+    conditions: [],
+    conditionLabels: [],
+    exclusive: false,
+    awakenedFrom: 0,
+    release: 0,
+    slots: [{ n: 1, options: [text] }],
+    obtain: []
+  })
+
+  it('escala "por cada luchador de etiqueta" con el núcleo', () => {
+    const unit = makeChar(1, [8])
+    const conditional = teamEquip(
+      60,
+      'Ataque físico básico 5.00% ~ 10.00% por cada luchador de etiqueta Saiyajin'
+    )
+    const lookup = new Map([['saiyajin', 1]])
+    const core = [unit, makeChar(2, [1]), makeChar(3, [1])].map((character) => ({
+      character,
+      owned: { stars: 14, zenkai: 0 },
+      score: 1
+    }))
+    const ctx = buildTeamContext(core)
+    expect(equipmentScore(conditional, unit, 'core', 'attack', ctx, lookup)).toBeGreaterThan(
+      equipmentScore(conditional, unit, 'core', 'attack')
+    )
+  })
+
+  it('ordena primero el equipamiento que aprovecha al equipo', () => {
+    const unit = makeChar(1, [1])
+    const plain = teamEquip(70, 'Ataque físico básico 10.00% ~ 20.00%')
+    const conditional = teamEquip(
+      71,
+      'Ataque físico básico 10.00% ~ 20.00% por cada luchador de etiqueta Saiyajin'
+    )
+    const lookup = new Map([['saiyajin', 1]])
+    const ctx = buildTeamContext(
+      [1, 2, 3].map((i) => ({
+        character: makeChar(i, [1, 8]),
+        owned: { stars: 14, zenkai: 0 },
+        score: 1
+      }))
+    )
+    const rec = recommendEquipment(unit, [plain, conditional], {}, { teamContext: ctx, tagLookup: lookup })
+    expect(rec.missing[0].equip.id).toBe(71)
+  })
+
+  it('teamEquipment sólo equipa al núcleo (3), no al banquillo', () => {
+    const characters = Array.from({ length: 6 }, (_, i) => makeChar(i + 1, [1]))
+    const team = recommendTeams(characters, tags, boxOf([1, 2, 3, 4, 5, 6]))[0]
+    expect(teamEquipment(team, [], {}, 'attack').length).toBe(3)
+  })
+})
+
+describe('condicionales avanzados de equipo', () => {
+  const teamEquip = (id: number, text: string): Equipment => ({
+    id,
+    name: `Equip ${id}`,
+    rarity: 3,
+    rarityLabel: 'Gold',
+    icon: '',
+    conditions: [],
+    conditionLabels: [],
+    exclusive: false,
+    awakenedFrom: 0,
+    release: 0,
+    slots: [{ n: 1, options: [text] }],
+    obtain: []
+  })
+  const scored = (character: Character) => ({ character, owned: { stars: 14, zenkai: 0 }, score: 1 })
+
+  it('cuenta "estilo de lucha tipo" con el equipo', () => {
+    const unit = makeChar(1, [13002])
+    const equip = teamEquip(
+      80,
+      'Ataque físico propio 5.00% ~ 10.00% por cada luchador de estilo de lucha tipo Energía'
+    )
+    const lookup = new Map([['tipo energia', 13002]])
+    const solo = buildTeamContext([scored(unit)])
+    const trio = buildTeamContext([unit, makeChar(2, [13002]), makeChar(3, [13002])].map(scored))
+    expect(equipmentScore(equip, unit, 'core', 'attack', trio, lookup)).toBeGreaterThan(
+      equipmentScore(equip, unit, 'core', 'attack', solo, lookup)
+    )
+  })
+
+  it('respeta "sin contarte": no cuenta si solo lo lleva el portador', () => {
+    const unit = makeChar(4, [25])
+    const equip = teamEquip(
+      81,
+      'Ataque físico propio 8.00% ~ 15.00% si hay algún luchador de etiqueta Androide (sin contarte)'
+    )
+    const lookup = new Map([['androide', 25]])
+    const solo = buildTeamContext([scored(unit)])
+    const conAliado = buildTeamContext([unit, makeChar(5, [25])].map(scored))
+    expect(equipmentScore(equip, unit, 'core', 'attack', conAliado, lookup)).toBeGreaterThan(
+      equipmentScore(equip, unit, 'core', 'attack', solo, lookup)
+    )
+  })
+})
+
+describe('pista de condicional para la UI', () => {
+  it('genera ×N con la etiqueta aprovechada', () => {
+    const equip: Equipment = {
+      id: 90,
+      name: 'Condicional',
+      rarity: 3,
+      rarityLabel: 'Gold',
+      icon: '',
+      conditions: [],
+      conditionLabels: [],
+      exclusive: false,
+      awakenedFrom: 0,
+      release: 0,
+      slots: [
+        { n: 1, options: ['Ataque físico propio 5.00% ~ 10.00% por cada luchador de etiqueta Saiyajin'] }
+      ],
+      obtain: []
+    }
+    const lookup = new Map([['saiyajin', 1]])
+    const ctx = buildTeamContext([
+      { character: makeChar(1, [1]), owned: { stars: 14, zenkai: 0 }, score: 1 },
+      { character: makeChar(2, [1]), owned: { stars: 14, zenkai: 0 }, score: 1 }
+    ])
+    expect(teamConditionalHint(equip, ctx, lookup)).toBe('×2 Saiyajin')
   })
 })

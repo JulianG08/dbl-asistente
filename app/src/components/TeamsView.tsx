@@ -1,14 +1,25 @@
 import { useMemo, useState } from 'preact/hooks'
 import type { Box, Character, Equipment, MetaData, OwnedEquipment, TagInfo } from '../types'
-import type { EquipmentPick, EquipmentRecommendation, EquipContext, EquipMode, PartyPlan, TeamPlan } from '../engine'
+import type {
+  EquipmentPick,
+  EquipmentRecommendation,
+  EquipContext,
+  EquipMode,
+  PartyPlan,
+  TeamContext,
+  TeamPlan
+} from '../engine'
 import {
   abilityBonus,
+  buildTagLookup,
+  buildTeamContext,
   completeTeam,
   ELEMENT_LABEL,
   equipmentHighlights,
   improveTeam,
   recommendEquipment,
   ROLE_LABEL,
+  teamConditionalHint,
   teamEquipment
 } from '../engine'
 import { CharAvatar, ElementDot, RarityChip, Section, UnitLine, equipIconUrl } from './ui'
@@ -108,6 +119,7 @@ export function TeamsView({
                 userEquipment={userEquipment}
                 meta={meta}
                 mode={equipMode}
+                abilityTags={abilityTags}
               />
             ))}
           </div>
@@ -284,9 +296,11 @@ function TeamCard({
   title?: string
 }) {
   const equipmentRecs = useMemo(
-    () => teamEquipment(team, equipment, userEquipment, mode),
-    [team, equipment, userEquipment, mode]
+    () => teamEquipment(team, equipment, userEquipment, mode, buildTagLookup(abilityTags)),
+    [team, equipment, userEquipment, mode, abilityTags]
   )
+  const teamCtx = useMemo(() => buildTeamContext(team.core), [team])
+  const tagLookup = useMemo(() => buildTagLookup(abilityTags), [abilityTags])
   const bonus = useMemo(() => abilityBonus(team, characters, abilityTags), [team, characters, abilityTags])
   const bonusTitle = Object.entries(bonus.byStat)
     .map(([stat, value]) => `${stat} +${value}%`)
@@ -353,11 +367,17 @@ function TeamCard({
           Equipamiento recomendado (lo tuyo + lo mejor)
         </summary>
         <p class="text-[0.62rem] text-muted mt-1">
-          El banquillo sólo rinde si cambias a esos luchadores durante la pelea.
+          El banquillo no entra en combate: sólo aporta su Habilidad Z, no necesita equipamiento.
         </p>
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
           {equipmentRecs.map((rec) => (
-            <EquipmentForCharacter key={rec.character.id} rec={rec} mode={mode} />
+            <EquipmentForCharacter
+              key={rec.character.id}
+              rec={rec}
+              mode={mode}
+              teamContext={teamCtx}
+              tagLookup={tagLookup}
+            />
           ))}
         </div>
       </details>
@@ -390,7 +410,8 @@ function SavedPartyCard({
   equipment,
   userEquipment,
   meta,
-  mode
+  mode,
+  abilityTags
 }: {
   party: PartyPlan
   characters: Character[]
@@ -400,17 +421,26 @@ function SavedPartyCard({
   userEquipment: Record<string, OwnedEquipment>
   meta?: MetaData
   mode: EquipMode
+  abilityTags: TagInfo[]
 }) {
   const [improvement, setImprovement] = useState<ReturnType<typeof improveTeam>>(null)
   const [showEquipment, setShowEquipment] = useState(false)
 
   const members = party.members
+  const core = members.slice(0, 3)
+  const teamCtx = useMemo(() => buildTeamContext(core), [core])
+  const tagLookup = useMemo(() => buildTagLookup(abilityTags), [abilityTags])
   const recs = useMemo(
     () =>
-      members.flatMap((m) =>
-        recommendEquipment(m.character, equipment, userEquipment, { context: 'core', mode })
+      core.map((m) =>
+        recommendEquipment(m.character, equipment, userEquipment, {
+          context: 'core',
+          mode,
+          teamContext: teamCtx,
+          tagLookup
+        })
       ),
-    [members, equipment, userEquipment, mode]
+    [core, equipment, userEquipment, mode, teamCtx, tagLookup]
   )
 
   return (
@@ -451,7 +481,13 @@ function SavedPartyCard({
       {showEquipment ? (
         <div class="grid gap-2 sm:grid-cols-2 pt-2">
           {recs.map((rec) => (
-            <EquipmentForCharacter key={rec.character.id} rec={rec} mode={mode} />
+            <EquipmentForCharacter
+              key={rec.character.id}
+              rec={rec}
+              mode={mode}
+              teamContext={teamCtx}
+              tagLookup={tagLookup}
+            />
           ))}
         </div>
       ) : null}
@@ -475,13 +511,27 @@ function SavedPartyCard({
             </ul>
           ) : null}
           <div class="grid gap-2 sm:grid-cols-2">
-            {improvement.proposed.map((u) => (
-              <EquipmentForCharacter
-                key={u.character.id}
-                rec={recommendEquipment(u.character, equipment, userEquipment, { context: 'core', mode })}
-                mode={mode}
-              />
-            ))}
+            {[...improvement.proposed]
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 3)
+              .map((u) => (
+                <EquipmentForCharacter
+                  key={u.character.id}
+                  rec={recommendEquipment(u.character, equipment, userEquipment, {
+                    context: 'core',
+                    mode,
+                    teamContext: buildTeamContext(
+                      [...improvement.proposed].sort((a, b) => b.score - a.score).slice(0, 3)
+                    ),
+                    tagLookup
+                  })}
+                  mode={mode}
+                  teamContext={buildTeamContext(
+                    [...improvement.proposed].sort((a, b) => b.score - a.score).slice(0, 3)
+                  )}
+                  tagLookup={tagLookup}
+                />
+              ))}
           </div>
         </div>
       ) : null}
@@ -491,7 +541,17 @@ function SavedPartyCard({
 
 // ---------------------------------------------------------------- equipamiento
 
-function EquipmentForCharacter({ rec, mode }: { rec: EquipmentRecommendation; mode: EquipMode }) {
+function EquipmentForCharacter({
+  rec,
+  mode,
+  teamContext,
+  tagLookup
+}: {
+  rec: EquipmentRecommendation
+  mode: EquipMode
+  teamContext?: TeamContext
+  tagLookup?: Map<string, number>
+}) {
   const ownedPicks = rec.owned.slice(0, 3)
   const missingPicks = rec.missing.slice(0, 3)
 
@@ -515,6 +575,8 @@ function EquipmentForCharacter({ rec, mode }: { rec: EquipmentRecommendation; mo
               character={rec.character}
               context={rec.context}
               mode={mode}
+              teamContext={teamContext}
+              tagLookup={tagLookup}
             />
           ))}
           {missingPicks.map((p) => (
@@ -524,6 +586,8 @@ function EquipmentForCharacter({ rec, mode }: { rec: EquipmentRecommendation; mo
               character={rec.character}
               context={rec.context}
               mode={mode}
+              teamContext={teamContext}
+              tagLookup={tagLookup}
             />
           ))}
         </div>
@@ -544,16 +608,21 @@ function EquipRow({
   owned,
   character,
   context,
-  mode
+  mode,
+  teamContext,
+  tagLookup
 }: {
   pick: EquipmentPick
   owned?: boolean
   character: Character
   context: EquipContext
   mode: EquipMode
+  teamContext?: TeamContext
+  tagLookup?: Map<string, number>
 }) {
   const equip = pick.equip
-  const highlights = equipmentHighlights(equip, character, context, mode)
+  const highlights = equipmentHighlights(equip, character, context, mode, teamContext, tagLookup)
+  const teamHint = teamConditionalHint(equip, teamContext, tagLookup)
   const obtain = equip.obtain?.[0]
   const tooltip = highlights.slots.join(' | ')
   const requirement = (equip.equippable ?? '').replace(/^Equippable\s*/i, '').trim()
@@ -574,6 +643,11 @@ function EquipRow({
         <div class="flex items-center gap-1 min-w-0">
           <span class="text-[0.72rem] truncate">{equip.name}</span>
           <span class="chip chip-muted">{equip.rarityLabel}</span>
+          {teamHint ? (
+            <span class="chip chip-gold" title="Se aprovecha del equipo actual">
+              {teamHint}
+            </span>
+          ) : null}
         </div>
         {highlights.primary ? (
           <p class="text-[0.62rem] text-text truncate" title={tooltip}>

@@ -92,10 +92,12 @@ archivo compatible con “Mi Caja” de dblegends.net.
   se escoge por puntuación + **Habilidad Z que buffea los tags del núcleo**; se premia la cobertura de elementos.
 - **Constructor**: parte de los personajes que elijas y añade el resto maximizando tag, elementos nuevos y
   puntuación; luego propone equipamiento compatible (tags, episodios o exclusivo de personaje).
-- **Equipamiento**: cada efecto del slot se parsea por separado (rango incluido). El **núcleo** prioriza daño
-  infligido y el ataque de su rol (físico o energía según sus stats) y el **banquillo** prioriza salud/defensa.
-  Muestra hasta **3 equipos que ya tienes + 3 alternativas** por personaje, con el requisito visible.
-  Selector **“Mejor ataque” / “Mejor equilibrio”** para cambiar el criterio.
+- **Equipamiento**: sólo el **núcleo (3)** se equipa; el banquillo no entra en combate y sólo aporta su
+  Habilidad Z. Los efectos se parsean por separado (rango incluido), se prioriza el ataque del rol (físico o
+  energía según sus stats) y se ordenan según el **equipo concreto**: los efectos condicionales
+  (*“por cada luchador de etiqueta X”*) escalan con los portadores reales del equipo. Muestra hasta
+  **3 equipos que ya tienes + 3 alternativas** por personaje, con requisito y el multiplicador si aplica.
+  Selector **“Mejor ataque” / “Mejor equilibrio”**.
 - **Ability Bonus (estimado)**: se parsean las Habilidades Z (tags/episodios que buffean y valor por nivel,
   con nivel según estrellas) y se suman los buffs que cada miembro aplica a sus aliados; el Líder recibe todo.
   No incluye la Z Ability extra del Zenkai (pendiente de datos).
