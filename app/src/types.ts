@@ -145,6 +145,7 @@ export interface CajaFile {
   units: Box
   equipment?: Record<string, OwnedEquipment>
   everOwnedEquipment?: number[]
+  missions?: { groups: Record<string, MissionProgress> }
   parties: SavedParty[]
 }
 
@@ -193,6 +194,14 @@ export interface MissionGroup {
   status: string
   facts?: Record<string, string>
   rewards?: MissionReward[]
+}
+
+export interface MissionProgress {
+  completed: number | null
+  total: number | null
+  clearCount: number
+  rewardsClaimed: number
+  rewardsTotal: number
 }
 
 export interface MissionsData {

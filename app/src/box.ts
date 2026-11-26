@@ -1,4 +1,4 @@
-import type { Box, CajaFile, OwnedEquipment, OwnedUnit, SavedParty } from './types'
+import type { Box, CajaFile, MissionProgress, OwnedEquipment, OwnedUnit, SavedParty } from './types'
 
 const KEY = 'dbl-asistente/caja-v1'
 
@@ -6,6 +6,7 @@ export interface BoxState {
   box: Box
   equipment: Record<string, OwnedEquipment>
   everOwnedEquipment: number[]
+  missions: Record<string, MissionProgress>
   parties: SavedParty[]
   playerName?: string
   importedAt?: string
@@ -14,7 +15,7 @@ export interface BoxState {
 export const STAR_THRESHOLDS = [100, 200, 400, 700, 1400, 1900, 2400, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 9999]
 
 export function emptyState(): BoxState {
-  return { box: {}, equipment: {}, everOwnedEquipment: [], parties: [] }
+  return { box: {}, equipment: {}, everOwnedEquipment: [], missions: {}, parties: [] }
 }
 
 export function loadState(): BoxState {
@@ -28,6 +29,7 @@ export function loadState(): BoxState {
       ...parsed,
       equipment: parsed.equipment ?? {},
       everOwnedEquipment: parsed.everOwnedEquipment ?? [],
+      missions: parsed.missions ?? {},
       parties: parsed.parties ?? []
     }
   } catch {
@@ -110,7 +112,7 @@ function fromRawSave(data: Record<string, unknown>): BoxState | null {
   }
   const everOwned = (itemRaw.givenEquipInfo_?.everGivenIdList ?? []).map(Number).filter(Number.isFinite)
 
-  return { box, parties, equipment, everOwnedEquipment: everOwned }
+  return { box, parties, equipment, everOwnedEquipment: everOwned, missions: {} }
 }
 
 /** Convierte el JSON de "Mi Caja" de dblegends.net. */
@@ -127,7 +129,7 @@ function fromDblegendsBox(data: Record<string, unknown>): BoxState | null {
       zenkai: v.zenkai ? Math.max(1, Math.min(7, Number(v.zenkaiLvl) || 1)) : 0
     }
   }
-  return found ? { box, equipment: {}, everOwnedEquipment: [], parties: [] } : null
+  return found ? { box, equipment: {}, everOwnedEquipment: [], missions: {}, parties: [] } : null
 }
 
 export type ImportKind = 'caja' | 'dblegends' | 'save' | 'desconocido'
@@ -140,7 +142,11 @@ export async function importBoxFile(file: File): Promise<{ state: BoxState; kind
   }
   const data = parsed as Record<string, unknown>
 
-  if (data.format === 'dbl-asistente/caja-v1' || data.format === 'dbl-asistente/caja-v2') {
+  if (
+    data.format === 'dbl-asistente/caja-v1' ||
+    data.format === 'dbl-asistente/caja-v2' ||
+    data.format === 'dbl-asistente/caja-v3'
+  ) {
     const caja = data as unknown as CajaFile
     return {
       kind: 'caja',
@@ -148,6 +154,7 @@ export async function importBoxFile(file: File): Promise<{ state: BoxState; kind
         box: caja.units ?? {},
         equipment: caja.equipment ?? {},
         everOwnedEquipment: caja.everOwnedEquipment ?? [],
+        missions: caja.missions?.groups ?? {},
         parties: caja.parties ?? [],
         playerName: caja.playerName ?? caja.player?.name,
         importedAt: new Date().toISOString()
@@ -166,7 +173,7 @@ export async function importBoxFile(file: File): Promise<{ state: BoxState; kind
 
 export function toCaja(state: BoxState): CajaFile {
   return {
-    format: 'dbl-asistente/caja-v2',
+    format: 'dbl-asistente/caja-v3',
     generatedAt: new Date().toISOString(),
     source: 'web',
     romVersion: '',
@@ -174,6 +181,7 @@ export function toCaja(state: BoxState): CajaFile {
     units: state.box,
     equipment: state.equipment,
     everOwnedEquipment: state.everOwnedEquipment,
+    missions: { groups: state.missions },
     parties: state.parties
   }
 }

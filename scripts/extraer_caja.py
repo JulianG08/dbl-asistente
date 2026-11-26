@@ -172,7 +172,7 @@ def parse_save(data: dict[str, Any]) -> dict[str, Any] | None:
     ever_owned = (items.get("givenEquipInfo_") or {}).get("everGivenIdList") or []
 
     return {
-        "format": "dbl-asistente/caja-v2",
+        "format": "dbl-asistente/caja-v3",
         "generatedAt": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
         "source": "adb",
         "romVersion": str(data.get("romVersion") or ""),
@@ -193,6 +193,42 @@ def parse_account(data: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def parse_missions(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Extrae el progreso de los grupos de misiones del archivo de estado de misiones."""
+    if not isinstance(data, dict) or "missionDataBaseCache" not in data:
+        return None
+
+    sets: dict[int, dict[str, int]] = {}
+    for entry in (data.get("missionDataBaseCache") or {}).get("mSetResponseList") or []:
+        info = entry.get("info") or {}
+        set_id = info.get("_missionSetId")
+        if set_id is None:
+            continue
+        sets[int(set_id)] = {
+            "completed": int(info.get("_missionCountCompleted") or 0),
+            "total": int(info.get("_missionCountTotal") or 0),
+        }
+
+    groups: dict[str, dict[str, Any]] = {}
+    for type_entry in data.get("missionViewGroupInfoList") or []:
+        for group in type_entry.get("infoList") or []:
+            group_id = int(group.get("groupId") or 0)
+            if group_id <= 0:
+                continue
+            name_id = group.get("nameId")
+            counts = sets.get(int(name_id)) if name_id is not None else None
+            items = ((group.get("recommendItemData") or {}).get("itemDataList")) or []
+            groups[str(group_id)] = {
+                "completed": counts["completed"] if counts else None,
+                "total": counts["total"] if counts else None,
+                "clearCount": int(group.get("clearCount") or 0),
+                "rewardsClaimed": sum(1 for it in items if int(it.get("gainStatus") or 0) == 1),
+                "rewardsTotal": len(items),
+            }
+
+    return {"groups": groups}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Extrae la caja de DBL del móvil por ADB")
     ap.add_argument("-o", "--out", default="caja.json", help="archivo de salida (defecto: caja.json)")
@@ -204,6 +240,7 @@ def main() -> None:
     out_path = Path(args.out)
     save_data: dict[str, Any] | None = None
     account: dict[str, Any] | None = None
+    missions_state: dict[str, Any] | None = None
 
     if args.file:
         log(f"leyendo {args.file}")
@@ -232,7 +269,7 @@ def main() -> None:
             # primero el guardado conocido; después los archivos pequeños hasta encontrarlo todo
             candidates = sorted(files, key=lambda f: (f[0] != "89bb4eb5637df3cd96c463a795005065", f[1] > max_bytes))
             for name, size in candidates:
-                if save_data and account:
+                if save_data and account and missions_state:
                     break
                 if size > max_bytes:
                     continue
@@ -256,6 +293,11 @@ def main() -> None:
                     if parsed_acc:
                         account = parsed_acc
                         log("datos de jugador encontrados")
+                if not missions_state:
+                    parsed_missions = parse_missions(data)
+                    if parsed_missions:
+                        missions_state = parsed_missions
+                        log("estado de misiones encontrado")
 
             if not save_data:
                 raise SystemExit(
@@ -271,6 +313,7 @@ def main() -> None:
     save_data["player"] = account or {}
     if account and account.get("name"):
         save_data["playerName"] = account["name"]
+    save_data["missions"] = missions_state or {"groups": {}}
 
     out_path.write_text(json.dumps(save_data, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -282,6 +325,7 @@ def main() -> None:
     log(f"  jugador: {save_data.get('playerName') or '(sin nombre)'}")
     log(f"  unidades: {len(units)} | 14★: {s14} | zenkai: {zk} | equipos: {len(save_data['parties'])}")
     log(f"  equipamiento: {len(save_data.get('equipment') or {})} objetos distintos")
+    log(f"  misiones: {len((save_data.get('missions') or {}).get('groups') or {})} grupos con estado")
     log(f"  romVersion: {save_data.get('romVersion')}")
 
 

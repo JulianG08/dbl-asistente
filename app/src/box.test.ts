@@ -39,6 +39,28 @@ describe('importBoxFile', () => {
     expect(state.everOwnedEquipment).toEqual([1771, 100])
   })
 
+  it('lee caja v3 con misiones', async () => {
+    const caja = {
+      format: 'dbl-asistente/caja-v3',
+      units: { '751': { stars: 14, zenkai: 0 } },
+      missions: {
+        groups: {
+          '2611212': { completed: 4, total: 50, clearCount: 0, rewardsClaimed: 0, rewardsTotal: 2 }
+        }
+      },
+      parties: []
+    }
+    const file = new File([JSON.stringify(caja)], 'caja.json', { type: 'application/json' })
+    const { state } = await importBoxFile(file)
+    expect(state.missions['2611212']).toEqual({
+      completed: 4,
+      total: 50,
+      clearCount: 0,
+      rewardsClaimed: 0,
+      rewardsTotal: 2
+    })
+  })
+
   it('lee el export de Mi Caja de dblegends.net', async () => {
     const box = { '751': { unlocked: true, stars: 10, zenkai: true, zenkaiLvl: 3 } }
     const file = new File([JSON.stringify(box)], 'box.json', { type: 'application/json' })

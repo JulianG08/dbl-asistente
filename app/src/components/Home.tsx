@@ -25,7 +25,7 @@ export function Home({
   parties: PartyPlan[]
   tips: Tip[]
   onImport: () => void
-  onGo: (tab: 'caja' | 'equipos' | 'actos' | 'invocaciones') => void
+  onGo: (tab: 'caja' | 'equipos' | 'actos' | 'invocaciones' | 'misiones') => void
 }) {
   const owned = Object.keys(state.box).length
   const total = data.characters.characters.filter((c) => !c.extra).length
@@ -43,6 +43,10 @@ export function Home({
   const coverage = useMemo(
     () => metaCoverage(data.characters.characters, state.box, data.meta, data.banners.banners),
     [data, state.box]
+  )
+  const pendingMissions = Object.values(state.missions ?? {}).reduce(
+    (sum, item) => sum + (item.total != null && item.completed != null ? Math.max(0, item.total - item.completed) : 0),
+    0
   )
 
   return (
@@ -117,6 +121,24 @@ export function Home({
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+
+      {pendingMissions > 0 ? (
+        <section class="card p-4">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h2 class="text-sm font-extrabold uppercase tracking-wide text-gold">
+                {pendingMissions} misiones pendientes
+              </h2>
+              <p class="text-xs text-muted mt-0.5">
+                Revisa las misiones activas y sus recompensas sin reclamar.
+              </p>
+            </div>
+            <button class="btn btn-sm" onClick={() => onGo('misiones')}>
+              Ver misiones
+            </button>
+          </div>
         </section>
       ) : null}
 

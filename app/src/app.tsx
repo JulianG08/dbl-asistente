@@ -260,7 +260,7 @@ export function App() {
         ) : tab === 'actos' ? (
           <EventsView plans={eventPlans} meta={data.meta} />
         ) : tab === 'misiones' ? (
-          <MissionsView missions={data.missions.missions} />
+          <MissionsView missions={data.missions.missions} progress={state.missions} />
         ) : (
           <BannersView plans={bannerPlans} meta={data.meta} />
         )}

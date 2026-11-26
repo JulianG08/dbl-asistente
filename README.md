@@ -23,7 +23,8 @@ Todo corre en tu navegador (PWA instalable); tu caja no se sube a ningún sitio.
 - **Tu plan**: acciones concretas (qué subir a 14★, qué Zenkai despertar, qué unidad buscar en banners).
 - **Tu cuenta vs. el meta**: cuántas unidades tier Z tienes y cuáles te faltan con su banner.
 - **Avisos**: actos que cierran en las próximas 48 h (“Se te escapa”).
-- **Misiones**: catálogo de grupos de misiones activos con sus recompensas (Z Power, cristales…).
+- **Misiones**: catálogo de grupos de misiones activos con sus recompensas (Z Power, cristales…) y **tu progreso
+  real** (completadas/total y recompensas sin reclamar) leído de tu guardado.
 - **Ability Bonus**: estimación del bonus real de tu equipo a partir de las Habilidades Z por nivel.
 - **Imágenes**: iconos de personajes y equipamiento empaquetados en el repo (cargan offline).
 
@@ -67,8 +68,9 @@ npm run dev        # http://localhost:5173
 4. En la app: **Importar** → selecciona `caja.json`.
 
 El script localiza el guardado del juego (`/sdcard/Android/data/com.bandainamcoent.dblegends_ww/files/`),
-lo decodifica (JSON con bytes invertidos XOR 0xFF) y extrae unidades, estrellas, Zenkai, equipos y tu
-**inventario de equipamiento** (formato `caja-v2`). Si tu móvil no permite ADB, también puedes usar la app sin extracción:
+lo decodifica (JSON con bytes invertidos XOR 0xFF) y extrae unidades, estrellas, Zenkai, equipos, tu
+**inventario de equipamiento** y tu **progreso de misiones** (formato `caja-v3`). Si tu móvil no permite ADB,
+también puedes usar la app sin extracción:
 
 - Export de **“Mi Caja”** de dblegends.net → **Importar** (formato propio del sitio).
 - Carga manual tocando personajes en la pestaña **Mi caja**.
