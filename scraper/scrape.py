@@ -182,11 +182,18 @@ def scrape_characters(
             for pid, name, *_ in picks.get(key, []):
                 tag_lookup[norm_key(name)] = pid
         main_chars = [c for c in chars if not c.get("extra")]
-        pending = [
-            c["id"]
-            for c in main_chars
-            if refresh_details or not (char_cache / f"{c['id']}.json").exists()
-        ]
+
+        def needs_refresh(cid: int) -> bool:
+            file = char_cache / f"{cid}.json"
+            if refresh_details or not file.exists():
+                return True
+            try:
+                cached = json.loads(file.read_text(encoding="utf-8"))
+                return "zAbilityLevels" not in cached
+            except json.JSONDecodeError:
+                return True
+
+        pending = [c["id"] for c in main_chars if needs_refresh(c["id"])]
         log(f"personajes: {len(pending)} fichas por descargar (de {len(main_chars)})")
 
         details: dict[int, dict[str, Any]] = {}
@@ -223,6 +230,8 @@ def scrape_characters(
                     "mechanics": detail.get("mechanics") or [],
                     "abilities": detail.get("abilities") or [],
                     "zAbility": detail.get("zAbility") or "",
+                    "zAbilityLevels": detail.get("zAbilityLevels") or [],
+                    "zenkaiAbilityLevels": detail.get("zenkaiAbilityLevels") or [],
                     "zAbilityTags": detail.get("zAbilityTags") or [],
                     "artProfile": detail.get("artProfile") or {},
                 })
@@ -494,7 +503,9 @@ def parse_character_detail(
     cache = cache_dir / f"{char_id}.json" if cache_dir else None
     if cache and cache.exists() and not refresh:
         try:
-            return json.loads(cache.read_text(encoding="utf-8"))
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            if "zAbilityLevels" in cached:
+                return cached
         except json.JSONDecodeError:
             pass
 
@@ -520,12 +531,26 @@ def parse_character_detail(
             abilities.append({"name": entry[0], "text": (entry[1] or "")[:1200]})
 
     z_ids = list(ids.get("z") or [])
+    z_levels: list[dict[str, str]] = []
     z_texts = []
     for zid in z_ids:
         entry = abilities_blob.get(str(zid))
         if entry and entry[1]:
+            z_levels.append({"name": entry[0] or "", "text": entry[1]})
             z_texts.append(entry[1])
     z_combined = "\n".join(z_texts)
+
+    zenkai_levels: list[dict[str, str]] = []
+    try:
+        zk_nodes = doc.xpath('//script[@id="zkhtml"]/text()')
+        if zk_nodes and zk_nodes[0].strip():
+            zk_data = json.loads(zk_nodes[0])
+            if isinstance(zk_data, dict):
+                for value in zk_data.values():
+                    if isinstance(value, list) and len(value) > 1 and value[1]:
+                        zenkai_levels.append({"name": value[0] or "", "text": value[1]})
+    except Exception:
+        zenkai_levels = []
 
     topd = json_blob(doc, "topd") or {}
     art_profile: dict[str, Any] = {
@@ -549,6 +574,8 @@ def parse_character_detail(
         "mechanics": detect_mechanics(all_text),
         "abilities": abilities[:6],
         "zAbility": z_combined[:600],
+        "zAbilityLevels": z_levels,
+        "zenkaiAbilityLevels": zenkai_levels,
         "zAbilityTags": z_tags_from_text(z_combined, tag_lookup),
         "artProfile": art_profile,
     }
@@ -779,6 +806,71 @@ def scrape_equipment(
     }
 
 
+def scrape_missions(client: Client) -> dict[str, Any]:
+    log("misiones: descargando listado")
+    doc = client.doc("/missions")
+    raw = json_blob(doc, "missions")
+    now = now_ts()
+    horizon = now + 180 * 86400
+
+    keep = []
+    for mission in raw:
+        status = event_status(mission, now)
+        if status not in ("active", "upcoming"):
+            continue
+        end = mission.get("end") or 0
+        begin = mission.get("begin") or 0
+        if status == "active" and (not end or end > horizon):
+            continue
+        if status == "upcoming" and begin > now + 30 * 86400:
+            continue
+        entry = dict(mission)
+        entry["status"] = status
+        keep.append(entry)
+
+    keep.sort(key=lambda m: (m["status"] != "active", m.get("end") or 0))
+    log(f"misiones: {len(keep)} activas/próximas de {len(raw)}")
+
+    for i, mission in enumerate(keep, 1):
+        try:
+            detail = client.doc(f"/mission/{mission['id']}")
+            facts: dict[str, str] = {}
+            for div in detail.xpath('//dl[contains(@class,"mis-facts")]/div'):
+                dt = text_of(div.xpath("./dt")[0]) if div.xpath("./dt") else ""
+                dd = text_of(div.xpath("./dd")[0]) if div.xpath("./dd") else ""
+                if dt:
+                    facts[dt] = dd
+            rewards = []
+            for a in detail.xpath('//*[contains(@class,"mis-total")]//a[contains(@class,"stg-it")]'):
+                img = a.xpath(".//img/@src")
+                src = img[0] if img else ""
+                kind = "item"
+                if "/z_power/" in src:
+                    kind = "zpower"
+                elif "/zenkai_power/" in src:
+                    kind = "zenkai"
+                elif "/medals/" in src:
+                    kind = "medal"
+                rewards.append({
+                    "name": a.get("title") or text_of(a),
+                    "count": text_of(a.xpath(".//b")[0]) if a.xpath(".//b") else "",
+                    "href": a.get("href") or "",
+                    "kind": kind,
+                })
+            mission["facts"] = facts
+            mission["rewards"] = rewards
+        except Exception as exc:  # pragma: no cover
+            log(f"aviso: sin detalle para misión #{mission['id']}: {exc}")
+        if i % 25 == 0:
+            log(f"misiones: {i}/{len(keep)} fichas")
+
+    return {
+        "generatedAt": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
+        "gameDataVersion": game_data_version(doc),
+        "missions": keep,
+    }
+
+
 TIERLIST_URL = "https://dblegends.app/data/tierlist.json"
 
 
@@ -913,7 +1005,7 @@ def main() -> None:
     ap.add_argument("--refresh-equipment", action="store_true", help="ignora la caché de detalles de equipamiento")
     ap.add_argument("--refresh-characters", action="store_true", help="ignora la caché de fichas de personajes")
     ap.add_argument("--no-images", action="store_true", help="no descargar iconos")
-    ap.add_argument("--only", choices=["characters", "events", "banners", "equipment", "meta"], help="raspar sólo una sección")
+    ap.add_argument("--only", choices=["characters", "events", "banners", "equipment", "meta", "missions"], help="raspar sólo una sección")
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -950,6 +1042,10 @@ def main() -> None:
         data = scrape_events(client, skip_details=args.skip_details)
         (out / "events.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         log(f"actos: {len(data['events'])} guardados")
+    if args.only in (None, "missions"):
+        data = scrape_missions(client)
+        (out / "missions.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        log(f"misiones: {len(data['missions'])} guardadas")
     if args.only in (None, "banners"):
         data = scrape_banners(client, skip_details=args.skip_details)
         (out / "banners.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

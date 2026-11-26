@@ -24,11 +24,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Caché de detalles de equipamiento
+      - name: Caché de detalles (equipamiento y fichas)
         uses: actions/cache@v4
         with:
           path: scraper/.cache
-          key: dbl-equip-cache-v1
+          key: dbl-cache-${{ hashFiles('scraper/scrape.py') }}
 
       - name: Instalar dependencias del scraper
         run: pip install -r scraper/requirements.txt

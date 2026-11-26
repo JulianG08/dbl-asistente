@@ -19,6 +19,8 @@ export interface Character {
   mechanics?: string[]
   abilities?: { name: string; text: string }[]
   zAbility?: string
+  zAbilityLevels?: { name: string; text: string }[]
+  zenkaiAbilityLevels?: { name: string; text: string }[]
   zAbilityTags?: number[]
 }
 
@@ -152,6 +154,7 @@ export interface AppData {
   banners: BannersData
   equipment: EquipmentData
   meta: MetaData
+  missions: MissionsData
 }
 
 export interface MetaUnit {
@@ -170,6 +173,32 @@ export interface MetaData {
   tierOrder: string[]
   tiers: Record<string, MetaUnit>
   boost?: Record<string, unknown>
+}
+
+export interface MissionReward {
+  name: string
+  count: string
+  href: string
+  kind: string
+}
+
+export interface MissionGroup {
+  id: number
+  name: string
+  img: string
+  begin: number
+  end: number
+  perm: number
+  count: number
+  status: string
+  facts?: Record<string, string>
+  rewards?: MissionReward[]
+}
+
+export interface MissionsData {
+  generatedAt: string
+  gameDataVersion: string
+  missions: MissionGroup[]
 }
 
 export interface EquipmentSlot {

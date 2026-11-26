@@ -909,6 +909,280 @@ export function planBanners(banners: Banner[], box: Box): BannerPlan[] {
 
 // ---------------------------------------------------------------- guías
 
+export interface AbilityBonus {
+  total: number
+  byStat: Record<string, number>
+  givers: { name: string; value: number }[]
+}
+
+interface ZClause {
+  tags: number[]
+  stat: string
+  value: number
+}
+
+const Z_LEVEL_STARS = [3, 6, 14]
+
+const STAT_PATTERNS: [RegExp, string][] = [
+  [/salud/i, 'Salud'],
+  [/ataque físico/i, 'Ataque físico'],
+  [/ataque de energía/i, 'Ataque de energía'],
+  [/defensa física/i, 'Defensa física'],
+  [/defensa de energía/i, 'Defensa de energía'],
+  [/daño infligido/i, 'Daño'],
+  [/guardia de daño/i, 'Guardia'],
+  [/recuperación|ki|crítico|velocidad de robo/i, 'Utilidad']
+]
+
+export function zAbilityLevelFor(stars: number): number {
+  if (stars >= Z_LEVEL_STARS[2]) return 3
+  if (stars >= Z_LEVEL_STARS[1]) return 2
+  if (stars >= Z_LEVEL_STARS[0]) return 1
+  return 0
+}
+
+function resolveTagIds(fragment: string, lookup: Map<string, number>): number[] {
+  const cleaned = fragment.replace(/\{\{ICN:[^}]+\}\}/g, ' ')
+  const ids: number[] = []
+  for (const part of cleaned.split(/,| o | y |\//i)) {
+    const name = normalizeText(part)
+    if (!name) continue
+    let id = lookup.get(name)
+    if (id === undefined) {
+      for (const [knownName, knownId] of lookup) {
+        if (knownName.length >= 4 && name.includes(knownName)) {
+          id = knownId
+          break
+        }
+      }
+    }
+    if (id !== undefined && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+export function parseZAbilityText(text: string, lookup: Map<string, number>): ZClause[] {
+  const clauses: ZClause[] = []
+  let currentTags: number[] = []
+
+  for (const raw of (text || '').split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line) continue
+    if (line.includes('{{ICN:')) {
+      const withoutIcons = line.replace(/\{\{ICN:[^}]+\}\}/g, ' ')
+      const conditionPart = withoutIcons.split(':')[0]
+      currentTags = resolveTagIds(conditionPart, lookup)
+    } else {
+      const etiqueta = line.match(/para etiqueta ([^\n·]+)/i)
+      if (etiqueta) currentTags = resolveTagIds(etiqueta[1], lookup)
+    }
+    const match = line.match(/([^+·\d][^+·]*?)\s*\+([\d.]+)\s*%/)
+    if (!match) continue
+    const statName = match[1].trim()
+    const stat = STAT_PATTERNS.find(([re]) => re.test(statName))?.[1]
+    if (stat) clauses.push({ tags: [...currentTags], stat, value: Number(match[2]) })
+  }
+  return clauses
+}
+
+export function abilityBonus(
+  team: TeamPlan,
+  characters: Character[],
+  tagNames: TagInfo[]
+): AbilityBonus {
+  const lookup = new Map<string, number>()
+  for (const tag of tagNames) lookup.set(normalizeText(tag.name), tag.id)
+
+  const scored = [...team.core, ...team.bench]
+  const members = scored.map((u) => u.character)
+  const leader = team.core[0]?.character
+  const coreIds = new Set(team.core.map((u) => u.character.id))
+
+  const byStat: Record<string, number> = {}
+  const giverTotals = new Map<string, number>()
+  let total = 0
+
+  for (const giver of scored) {
+    const levels = giver.character.zAbilityLevels ?? []
+    const levelIndex = Math.min(zAbilityLevelFor(giver.owned.stars), Math.max(0, levels.length - 1))
+    const baseText = levels[levelIndex]?.text ?? ''
+    const zenkaiLevels = giver.character.zenkaiAbilityLevels ?? []
+    const zenkaiText =
+      giver.owned.zenkai > 0 && zenkaiLevels.length
+        ? zenkaiLevels[Math.min(giver.owned.zenkai - 1, zenkaiLevels.length - 1)]?.text ?? ''
+        : ''
+
+    const clauses = [
+      ...parseZAbilityText(baseText, lookup),
+      ...parseZAbilityText(zenkaiText, lookup)
+    ]
+
+    for (const clause of clauses) {
+      for (const receiver of members) {
+        const isLeaderReceiver = receiver.id === leader?.id
+        const leaderGift = giver.character.id === leader?.id && coreIds.has(receiver.id)
+        const applies =
+          clause.tags.length === 0 ||
+          isLeaderReceiver ||
+          leaderGift ||
+          clause.tags.some((t) => receiver.tags.includes(t))
+        if (!applies) continue
+        total += clause.value
+        byStat[clause.stat] = (byStat[clause.stat] ?? 0) + clause.value
+        giverTotals.set(giver.character.name, (giverTotals.get(giver.character.name) ?? 0) + clause.value)
+      }
+    }
+  }
+
+  const givers = [...giverTotals.entries()]
+    .map(([name, value]) => ({ name, value: Math.round(value * 10) / 10 }))
+    .sort((a, b) => b.value - a.value)
+
+  return { total: Math.round(total * 10) / 10, byStat, givers }
+}
+
+export interface PlanAction {
+  kind: 'stars' | 'zenkai' | 'missing'
+  title: string
+  detail: string
+  href?: string
+}
+
+export function buildPlan(
+  teams: TeamPlan[],
+  parties: PartyPlan[],
+  characters: Character[],
+  box: Box,
+  banners: Banner[],
+  meta?: MetaData
+): PlanAction[] {
+  const actions: PlanAction[] = []
+  const seen = new Set<number>()
+  const pool: { unit: ScoredUnit; teamTag: string }[] = []
+
+  for (const team of teams.slice(0, 3)) {
+    for (const unit of [...team.core, ...team.bench]) {
+      if (seen.has(unit.character.id)) continue
+      seen.add(unit.character.id)
+      pool.push({ unit, teamTag: team.tag.name })
+    }
+  }
+  for (const party of parties) {
+    for (const unit of party.members) {
+      if (seen.has(unit.character.id)) continue
+      seen.add(unit.character.id)
+      pool.push({ unit, teamTag: party.name })
+    }
+  }
+
+  // Subir estrellas de las unidades con más impacto
+  const upgrades = pool
+    .filter((u) => u.unit.owned.stars < 14 && u.unit.character.rarity !== 'HERO')
+    .sort(
+      (a, b) =>
+        b.unit.score * (14 - b.unit.owned.stars) - a.unit.score * (14 - a.unit.owned.stars)
+    )
+    .slice(0, 3)
+  for (const { unit, teamTag } of upgrades) {
+    actions.push({
+      kind: 'stars',
+      title: `Sube estrellas: ${unit.character.name}`,
+      detail: `Está a ${unit.owned.stars}★ en "${teamTag}". Farmea su Z Power (Multi-Z Power o su evento) para acercarla a 14★ sin gastar cristales.`
+    })
+  }
+
+  // Zenkai disponibles sin despertar
+  const zenkais = pool
+    .filter((u) => u.unit.character.zenkai && u.unit.owned.zenkai === 0)
+    .sort((a, b) => b.unit.score - a.unit.score)
+    .slice(0, 2)
+  for (const { unit } of zenkais) {
+    actions.push({
+      kind: 'zenkai',
+      title: `Despierta el Zenkai de ${unit.character.name}`,
+      detail: 'Tiene Zenkai disponible y lo llevas sin despertar. Con su Rush ZENKAI gana un salto grande de poder.'
+    })
+  }
+
+  // Faltantes de tus equipos que se pueden conseguir ahora
+  const bannersWith = (card: string) =>
+    banners.find((b) => b.pools?.some((p) => p.units.some((u) => u.card === card)))
+  const missingPool: { character: Character; tag: string }[] = []
+  const topTags = teams.slice(0, 2).map((t) => t.tag)
+  for (const tag of topTags) {
+    for (const character of characters) {
+      if (character.extra || !character.tags.includes(tag.id)) continue
+      if (String(character.id) in box) continue
+      missingPool.push({ character, tag: tag.name })
+    }
+  }
+  const missingSorted = missingPool
+    .sort(
+      (a, b) =>
+        tierFactor(b.character, meta) - tierFactor(a.character, meta) ||
+        b.character.release - a.character.release
+    )
+    .slice(0, 2)
+  for (const { character, tag } of missingSorted) {
+    const banner = bannersWith(character.card)
+    actions.push({
+      kind: 'missing',
+      title: `Objetivo: ${character.name}`,
+      detail: banner
+        ? `Encaja en "${tag}" y está destacado en "${banner.name}".`
+        : `Encaja en "${tag}" y todavía no está en banners activos. Guárdalo como objetivo.`
+    })
+  }
+
+  return actions.slice(0, 6)
+}
+
+export interface MetaGap {
+  card: string
+  tier?: string
+  name: string
+  characterId?: number
+  source?: string
+}
+
+export interface MetaCoverage {
+  total: number
+  owned: number
+  gaps: MetaGap[]
+}
+
+export function metaCoverage(
+  characters: Character[],
+  box: Box,
+  meta: MetaData,
+  banners: Banner[],
+  tiers: string[] = ['Z']
+): MetaCoverage {
+  const byCard = new Map(characters.map((c) => [c.card.toLowerCase(), c]))
+  const entries = Object.entries(meta.tiers).filter(([, unit]) => unit.tier && tiers.includes(unit.tier))
+  let owned = 0
+  const gaps: MetaGap[] = []
+
+  for (const [card, unit] of entries) {
+    const character = byCard.get(card.toLowerCase())
+    if (character && String(character.id) in box) {
+      owned++
+      continue
+    }
+    const banner = banners.find((b) => b.pools?.some((p) => p.units.some((u) => u.card === card)))
+    gaps.push({
+      card,
+      tier: unit.tier,
+      name: character?.name ?? card,
+      characterId: character?.id,
+      source: banner?.name
+    })
+  }
+
+  gaps.sort((a, b) => (meta.tiers[a.card]?.rank ?? 999) - (meta.tiers[b.card]?.rank ?? 999))
+  return { total: entries.length, owned, gaps }
+}
+
 export interface Tip {
   kind: 'equipo' | 'acto' | 'invocacion' | 'caja'
   title: string

@@ -20,6 +20,11 @@ Todo corre en tu navegador (PWA instalable); tu caja no se sube a ningún sitio.
   según los elementos de los enemigos, etapas, drops y retos.
 - **Invocaciones**: veredicto *TIRAR / CONSIDERAR / AHORRA* según las unidades destacadas que ya tienes.
 - **Guías**: recomendaciones generadas (equipo estrella, acto urgente, siguiente mejora de tu caja).
+- **Tu plan**: acciones concretas (qué subir a 14★, qué Zenkai despertar, qué unidad buscar en banners).
+- **Tu cuenta vs. el meta**: cuántas unidades tier Z tienes y cuáles te faltan con su banner.
+- **Avisos**: actos que cierran en las próximas 48 h (“Se te escapa”).
+- **Misiones**: catálogo de grupos de misiones activos con sus recompensas (Z Power, cristales…).
+- **Ability Bonus**: estimación del bonus real de tu equipo a partir de las Habilidades Z por nivel.
 - **Imágenes**: iconos de personajes y equipamiento empaquetados en el repo (cargan offline).
 
 ## Estructura
@@ -88,6 +93,9 @@ archivo compatible con “Mi Caja” de dblegends.net.
 - **Equipamiento**: cada efecto del slot se parsea por separado (rango incluido). El **núcleo** prioriza daño
   infligido y el ataque de su rol (físico o energía según sus stats) y el **banquillo** prioriza salud/defensa.
   Selector **“Mejor ataque” / “Mejor equilibrio”** para cambiar el criterio.
+- **Ability Bonus (estimado)**: se parsean las Habilidades Z (tags/episodios que buffean y valor por nivel,
+  con nivel según estrellas) y se suman los buffs que cada miembro aplica a sus aliados; el Líder recibe todo.
+  No incluye la Z Ability extra del Zenkai (pendiente de datos).
 - **Actos**: urgencia por tiempo restante + valor de recompensas + etapas. Equipo sugerido con el elemento que
   contrarresta a los enemigos (Rojo > Amarillo > Morado > Verde > Azul > Rojo).
 - **Invocaciones**: valor de las destacadas que te faltan (ULTRA/LEGEND pesan más) contra las que ya tienes.

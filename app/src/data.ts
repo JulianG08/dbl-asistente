@@ -1,4 +1,4 @@
-import type { AppData, CharactersData, EventsData, BannersData, EquipmentData, MetaData } from './types'
+import type { AppData, CharactersData, EventsData, BannersData, EquipmentData, MetaData, MissionsData } from './types'
 
 const base = import.meta.env.BASE_URL
 
@@ -16,15 +16,22 @@ const EMPTY_META: MetaData = {
   tiers: {}
 }
 
+const EMPTY_MISSIONS: MissionsData = {
+  generatedAt: '',
+  gameDataVersion: '',
+  missions: []
+}
+
 export async function loadData(): Promise<AppData> {
-  const [characters, events, banners, equipment, meta] = await Promise.all([
+  const [characters, events, banners, equipment, meta, missions] = await Promise.all([
     getJson<CharactersData>('characters.json'),
     getJson<EventsData>('events.json'),
     getJson<BannersData>('banners.json'),
     getJson<EquipmentData>('equipment.json'),
-    getJson<MetaData>('meta.json').catch(() => EMPTY_META)
+    getJson<MetaData>('meta.json').catch(() => EMPTY_META),
+    getJson<MissionsData>('missions.json').catch(() => EMPTY_MISSIONS)
   ])
-  return { characters, events, banners, equipment, meta }
+  return { characters, events, banners, equipment, meta, missions }
 }
 
 export function formatDate(ts: number): string {

@@ -24,15 +24,17 @@ import { BoxView } from './components/BoxView'
 import { TeamsView } from './components/TeamsView'
 import { EventsView } from './components/EventsView'
 import { BannersView } from './components/BannersView'
+import { MissionsView } from './components/MissionsView'
 
-type Tab = 'inicio' | 'caja' | 'equipos' | 'actos' | 'invocaciones'
+type Tab = 'inicio' | 'caja' | 'equipos' | 'actos' | 'invocaciones' | 'misiones'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'inicio', label: 'Inicio' },
   { id: 'caja', label: 'Mi caja' },
   { id: 'equipos', label: 'Equipos' },
   { id: 'actos', label: 'Actos' },
-  { id: 'invocaciones', label: 'Invocaciones' }
+  { id: 'invocaciones', label: 'Invocaciones' },
+  { id: 'misiones', label: 'Misiones' }
 ]
 
 const IMPORT_LABEL: Record<string, string> = {
@@ -249,9 +251,16 @@ export function App() {
             equipment={data.equipment.items}
             userEquipment={state.equipment}
             meta={data.meta}
+            abilityTags={[
+              ...data.characters.tags,
+              ...data.characters.episodes,
+              ...data.characters.traits
+            ]}
           />
         ) : tab === 'actos' ? (
           <EventsView plans={eventPlans} meta={data.meta} />
+        ) : tab === 'misiones' ? (
+          <MissionsView missions={data.missions.missions} />
         ) : (
           <BannersView plans={bannerPlans} meta={data.meta} />
         )}

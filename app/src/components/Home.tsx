@@ -1,9 +1,10 @@
 import type { AppData } from '../types'
 import type { BoxState } from '../box'
 import type { BannerPlan, EventPlan, PartyPlan, TeamPlan, Tip } from '../engine'
-import { eventCountdown } from '../engine'
+import { buildPlan, eventCountdown, metaCoverage } from '../engine'
 import { Section, UnitLine } from './ui'
 import { formatDate } from '../data'
+import { useMemo } from 'preact/hooks'
 
 export function Home({
   data,
@@ -31,6 +32,18 @@ export function Home({
   const maxed = Object.values(state.box).filter((u) => u.stars >= 14).length
   const zenkai = Object.values(state.box).filter((u) => u.zenkai >= 1).length
   const activeParty = parties.find((p) => p.active)
+
+  const urgent = events.filter(
+    (plan) => plan.event.status === 'active' && plan.hoursLeft !== null && plan.hoursLeft > 0 && plan.hoursLeft <= 48
+  )
+  const plan = useMemo(
+    () => buildPlan(teams, parties, data.characters.characters, state.box, data.banners.banners, data.meta),
+    [teams, parties, data, state.box]
+  )
+  const coverage = useMemo(
+    () => metaCoverage(data.characters.characters, state.box, data.meta, data.banners.banners),
+    [data, state.box]
+  )
 
   return (
     <div class="space-y-8">
@@ -87,6 +100,70 @@ export function Home({
           ) : null}
         </div>
       </section>
+
+      {urgent.length ? (
+        <section class="card p-4 border-fire/50">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <h2 class="text-sm font-extrabold uppercase tracking-wide text-fire">⚠ Se te escapa</h2>
+            <button class="btn btn-sm" onClick={() => onGo('actos')}>
+              Ver actos
+            </button>
+          </div>
+          <ul class="mt-2 space-y-1">
+            {urgent.slice(0, 4).map((plan) => (
+              <li class="text-sm flex items-center justify-between gap-2">
+                <span class="truncate">{plan.event.name}</span>
+                <span class="chip chip-fire">{eventCountdown(plan)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {plan.length ? (
+        <Section title="Tu plan" subtitle="Acciones concretas para mejorar tu cuenta esta semana">
+          <div class="grid gap-3 md:grid-cols-2">
+            {plan.map((action, index) => (
+              <article class="card p-4">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="chip chip-gold">{action.kind === 'stars' ? '★' : action.kind === 'zenkai' ? 'ZK' : '🎯'}</span>
+                  <h3 class="font-bold text-sm">{action.title}</h3>
+                </div>
+                <p class="text-sm text-muted leading-relaxed">{action.detail}</p>
+              </article>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
+      {coverage.total ? (
+        <Section
+          title="Tu cuenta vs. el meta"
+          subtitle={`Unidades tier Z de dblegends.app · ${coverage.owned}/${coverage.total}`}
+        >
+          <div class="card p-4 space-y-3">
+            <div class="h-2 rounded-full bg-panel2 overflow-hidden">
+              <div
+                class="h-full bg-gold"
+                style={{ width: `${Math.round((coverage.owned / Math.max(1, coverage.total)) * 100)}%` }}
+              />
+            </div>
+            {coverage.gaps.length ? (
+              <div class="flex flex-wrap gap-2">
+                {coverage.gaps.slice(0, 8).map((gap) => (
+                  <span class="chip" key={gap.card} title={gap.source ? `Disponible en: ${gap.source}` : 'Sin banner activo'}>
+                    <span class={gap.tier === 'Z' ? 'text-fire font-bold' : 'text-gold font-bold'}>{gap.tier}</span>
+                    {gap.name}
+                    {gap.source ? <span class="text-muted">· {gap.source.slice(0, 28)}</span> : null}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p class="text-sm text-muted">¡Tienes todas las unidades tier Z! 🎉</p>
+            )}
+          </div>
+        </Section>
+      ) : null}
 
       <Section title="Recomendaciones" subtitle="Generadas a partir de tu caja y los datos del juego">
         <div class="grid gap-3 md:grid-cols-2">

@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { Banner, Box, Character, Equipment, GameEvent, MetaData } from './types'
 import {
+  abilityBonus,
   completeTeam,
   equipmentScore,
   equipmentUsableBy,
   improveTeam,
   parseEffects,
+  parseZAbilityText,
   planBanners,
   planEvents,
   recommendEquipment,
   recommendTeams,
-  unitScore
+  unitScore,
+  zAbilityLevelFor
 } from './engine'
 
 function makeChar(id: number, tags: number[], rarity: Character['rarity'] = 'SPARKING', element: Character['element'] = 'RED'): Character {
@@ -215,6 +218,33 @@ describe('equipamiento', () => {
     expect(equipmentScore(defense, unit, 'bench', 'attack')).toBeGreaterThan(
       equipmentScore(attack, unit, 'bench', 'attack')
     )
+  })
+})
+
+describe('Ability Bonus', () => {
+  it('asigna nivel de Habilidad Z por estrellas', () => {
+    expect(zAbilityLevelFor(0)).toBe(0)
+    expect(zAbilityLevelFor(3)).toBe(1)
+    expect(zAbilityLevelFor(6)).toBe(2)
+    expect(zAbilityLevelFor(14)).toBe(3)
+  })
+
+  it('parsea condición de tag y efecto', () => {
+    const lookup = new Map([['androide', 25]])
+    const clauses = parseZAbilityText('{{ICN:ChaTag}}Androide:\n· Defensa física básica +19%', lookup)
+    expect(clauses).toHaveLength(1)
+    expect(clauses[0]).toEqual({ tags: [25], stat: 'Defensa física', value: 19 })
+  })
+
+  it('suma los buffs que aplican a los miembros del equipo', () => {
+    const characters = Array.from({ length: 6 }, (_, i) => ({
+      ...makeChar(i + 1, [1]),
+      zAbilityLevels: [{ name: 'Habilidad Z I', text: '{{ICN:ChaTag}}Saiyajin:\n· Ataque físico básico +20%' }]
+    }))
+    const team = recommendTeams(characters, tags, boxOf([1, 2, 3, 4, 5, 6]))[0]
+    const bonus = abilityBonus(team, characters, tags)
+    expect(bonus.total).toBeGreaterThan(0)
+    expect(bonus.byStat['Ataque físico']).toBeGreaterThan(0)
   })
 })
 

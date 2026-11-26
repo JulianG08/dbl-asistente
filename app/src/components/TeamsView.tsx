@@ -2,6 +2,7 @@ import { useMemo, useState } from 'preact/hooks'
 import type { Box, Character, Equipment, MetaData, OwnedEquipment, TagInfo } from '../types'
 import type { EquipmentPick, EquipmentRecommendation, EquipContext, EquipMode, PartyPlan, TeamPlan } from '../engine'
 import {
+  abilityBonus,
   completeTeam,
   ELEMENT_LABEL,
   equipmentHighlights,
@@ -20,7 +21,8 @@ export function TeamsView({
   box,
   equipment,
   userEquipment,
-  meta
+  meta,
+  abilityTags
 }: {
   teams: TeamPlan[]
   parties: PartyPlan[]
@@ -30,6 +32,7 @@ export function TeamsView({
   equipment: Equipment[]
   userEquipment: Record<string, OwnedEquipment>
   meta?: MetaData
+  abilityTags: TagInfo[]
 }) {
   const [equipMode, setEquipMode] = useState<EquipMode>('attack')
 
@@ -43,6 +46,7 @@ export function TeamsView({
         userEquipment={userEquipment}
         meta={meta}
         equipMode={equipMode}
+        abilityTags={abilityTags}
       />
 
       <Section
@@ -78,6 +82,8 @@ export function TeamsView({
                 userEquipment={userEquipment}
                 meta={meta}
                 mode={equipMode}
+                characters={characters}
+                abilityTags={abilityTags}
               />
             ))}
           </div>
@@ -120,7 +126,8 @@ function TeamBuilder({
   equipment,
   userEquipment,
   meta,
-  equipMode
+  equipMode,
+  abilityTags
 }: {
   characters: Character[]
   tags: TagInfo[]
@@ -129,6 +136,7 @@ function TeamBuilder({
   userEquipment: Record<string, OwnedEquipment>
   meta?: MetaData
   equipMode: EquipMode
+  abilityTags: TagInfo[]
 }) {
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState<number[]>([])
@@ -239,6 +247,8 @@ function TeamBuilder({
             userEquipment={userEquipment}
             meta={meta}
             mode={equipMode}
+            characters={characters}
+            abilityTags={abilityTags}
             openEquipment
             title={`Equipo completado · ${result.tag.name}`}
           />
@@ -257,6 +267,8 @@ function TeamCard({
   userEquipment,
   meta,
   mode,
+  characters,
+  abilityTags,
   openEquipment = false,
   title
 }: {
@@ -266,6 +278,8 @@ function TeamCard({
   userEquipment: Record<string, OwnedEquipment>
   meta?: MetaData
   mode: EquipMode
+  characters: Character[]
+  abilityTags: TagInfo[]
   openEquipment?: boolean
   title?: string
 }) {
@@ -273,6 +287,10 @@ function TeamCard({
     () => teamEquipment(team, equipment, userEquipment, mode),
     [team, equipment, userEquipment, mode]
   )
+  const bonus = useMemo(() => abilityBonus(team, characters, abilityTags), [team, characters, abilityTags])
+  const bonusTitle = Object.entries(bonus.byStat)
+    .map(([stat, value]) => `${stat} +${value}%`)
+    .join(' · ')
 
   return (
     <article class="card p-4 sm:p-5 space-y-3">
@@ -283,6 +301,14 @@ function TeamCard({
           <span class="chip">{team.score.toFixed(1)} pts</span>
           <span class="chip chip-muted">media {team.avgStars.toFixed(1)}★</span>
           {team.zenkaiCount ? <span class="chip chip-fire">{team.zenkaiCount} Zenkai</span> : null}
+          {bonus.total ? (
+            <span
+              class="chip chip-gold"
+              title={`Ability Bonus estimado (sólo Z Ability base, sin la extra de Zenkai). ${bonusTitle}`}
+            >
+              AB +{bonus.total}%
+            </span>
+          ) : null}
         </div>
         <div class="flex items-center gap-1">
           {team.elements.map((el) => (
@@ -326,6 +352,9 @@ function TeamCard({
         <summary class="text-xs font-bold text-muted uppercase tracking-widest">
           Equipamiento recomendado (lo tuyo + lo mejor)
         </summary>
+        <p class="text-[0.62rem] text-muted mt-1">
+          El banquillo sólo rinde si cambias a esos luchadores durante la pelea.
+        </p>
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
           {equipmentRecs.map((rec) => (
             <EquipmentForCharacter key={rec.character.id} rec={rec} mode={mode} />
