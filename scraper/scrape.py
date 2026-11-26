@@ -493,7 +493,7 @@ def scrape_equipment(
     }
 
 
-
+def event_status(ev: dict[str, Any], now: int) -> str:
     if ev.get("perm"):
         return "permanent"
     begin, end = ev.get("begin") or 0, ev.get("end") or 0
