@@ -1,9 +1,10 @@
 import type { BannerPlan } from '../engine'
+import type { MetaData } from '../types'
 import { formatCountdown } from '../data'
 import { VerdictBadge } from './Home'
 import { ElementDot, RarityChip, Section, charIconUrl } from './ui'
 
-export function BannersView({ plans }: { plans: BannerPlan[] }) {
+export function BannersView({ plans, meta }: { plans: BannerPlan[]; meta?: MetaData }) {
   return (
     <Section
       title="Invocaciones"
@@ -49,6 +50,7 @@ export function BannersView({ plans }: { plans: BannerPlan[] }) {
                       <div class="flex flex-wrap gap-2">
                         {pool.units.map((unit) => {
                           const owned = featured.some((f) => f.unit.id === unit.id && f.owned)
+                          const tier = unit.card ? meta?.tiers?.[unit.card]?.tier : undefined
                           return (
                             <span class={owned ? 'chip chip-gold' : 'chip'} key={`${pool.title}-${unit.id}`}>
                               <img
@@ -63,6 +65,7 @@ export function BannersView({ plans }: { plans: BannerPlan[] }) {
                               <ElementDot element={unit.element} />
                               {unit.name}
                               <RarityChip rarity={unit.rarity} />
+                              {tier ? <span class={tier === 'Z' ? 'text-fire font-bold' : 'text-gold font-bold'}>{tier}</span> : null}
                               {owned ? '✓' : ''}
                             </span>
                           )

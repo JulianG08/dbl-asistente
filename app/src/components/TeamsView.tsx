@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks'
-import type { Box, Character, Equipment, OwnedEquipment, TagInfo } from '../types'
+import type { Box, Character, Equipment, MetaData, OwnedEquipment, TagInfo } from '../types'
 import type { EquipmentPick, EquipmentRecommendation, PartyPlan, TeamPlan } from '../engine'
 import { completeTeam, ELEMENT_LABEL, improveTeam, recommendEquipment, teamEquipment } from '../engine'
 import { CharAvatar, ElementDot, RarityChip, Section, UnitLine, equipIconUrl } from './ui'
@@ -11,7 +11,8 @@ export function TeamsView({
   tags,
   box,
   equipment,
-  userEquipment
+  userEquipment,
+  meta
 }: {
   teams: TeamPlan[]
   parties: PartyPlan[]
@@ -20,19 +21,34 @@ export function TeamsView({
   box: Box
   equipment: Equipment[]
   userEquipment: Record<string, OwnedEquipment>
+  meta?: MetaData
 }) {
   return (
     <div class="space-y-8">
-      <TeamBuilder characters={characters} tags={tags} box={box} equipment={equipment} userEquipment={userEquipment} />
+      <TeamBuilder
+        characters={characters}
+        tags={tags}
+        box={box}
+        equipment={equipment}
+        userEquipment={userEquipment}
+        meta={meta}
+      />
 
       <Section
         title="Equipos recomendados"
-        subtitle="Calculados con tus estrellas, Zenkai, tags compartidos y cobertura de elementos"
+        subtitle="Calculados con stats, recencia, mecánicas, meta, tags compartidos y cobertura de elementos"
       >
         {teams.length ? (
           <div class="space-y-4">
             {teams.map((team, index) => (
-              <TeamCard key={team.tag.id} team={team} index={index} equipment={equipment} userEquipment={userEquipment} />
+              <TeamCard
+                key={team.tag.id}
+                team={team}
+                index={index}
+                equipment={equipment}
+                userEquipment={userEquipment}
+                meta={meta}
+              />
             ))}
           </div>
         ) : (
@@ -54,6 +70,7 @@ export function TeamsView({
                 box={box}
                 equipment={equipment}
                 userEquipment={userEquipment}
+                meta={meta}
               />
             ))}
           </div>
@@ -70,13 +87,15 @@ function TeamBuilder({
   tags,
   box,
   equipment,
-  userEquipment
+  userEquipment,
+  meta
 }: {
   characters: Character[]
   tags: TagInfo[]
   box: Box
   equipment: Equipment[]
   userEquipment: Record<string, OwnedEquipment>
+  meta?: MetaData
 }) {
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState<number[]>([])
@@ -108,7 +127,7 @@ function TeamBuilder({
       setError('Selecciona al menos un personaje.')
       return
     }
-    const team = completeTeam(selection, characters, tags, box)
+    const team = completeTeam(selection, characters, tags, box, meta)
     if (!team) {
       setResult(null)
       setError('No encontré suficientes personajes con tags en común. Prueba con otro personaje.')
@@ -185,6 +204,7 @@ function TeamBuilder({
             index={0}
             equipment={equipment}
             userEquipment={userEquipment}
+            meta={meta}
             recs={result.recs}
             openEquipment
             title={`Equipo completado · ${result.team.tag.name}`}
@@ -202,6 +222,7 @@ function TeamCard({
   index,
   equipment,
   userEquipment,
+  meta,
   recs,
   openEquipment = false,
   title
@@ -210,6 +231,7 @@ function TeamCard({
   index: number
   equipment: Equipment[]
   userEquipment: Record<string, OwnedEquipment>
+  meta?: MetaData
   recs?: EquipmentRecommendation[]
   openEquipment?: boolean
   title?: string
@@ -243,10 +265,7 @@ function TeamCard({
         <div class="rounded-xl border border-line bg-panel2/50 p-3 space-y-1.5">
           <p class="text-[0.65rem] uppercase tracking-widest text-gold font-bold">Núcleo (3)</p>
           {team.core.map((u) => (
-            <div class="flex items-center justify-between gap-2" key={u.character.id}>
-              <UnitLine character={u.character} owned={u.owned} />
-              <span class="text-[0.7rem] text-muted mono">{u.score.toFixed(1)}</span>
-            </div>
+            <UnitLine key={u.character.id} character={u.character} owned={u.owned} meta={meta} showMetrics />
           ))}
         </div>
         <div class="rounded-xl border border-line bg-panel2/50 p-3 space-y-1.5">
@@ -307,7 +326,8 @@ function SavedPartyCard({
   tags,
   box,
   equipment,
-  userEquipment
+  userEquipment,
+  meta
 }: {
   party: PartyPlan
   characters: Character[]
@@ -315,6 +335,7 @@ function SavedPartyCard({
   box: Box
   equipment: Equipment[]
   userEquipment: Record<string, OwnedEquipment>
+  meta?: MetaData
 }) {
   const [improvement, setImprovement] = useState<ReturnType<typeof improveTeam>>(null)
   const [showEquipment, setShowEquipment] = useState(false)
@@ -335,7 +356,7 @@ function SavedPartyCard({
       </div>
       <div class="space-y-1">
         {members.map((m) => (
-          <UnitLine key={m.character.id} character={m.character} owned={m.owned} />
+          <UnitLine key={m.character.id} character={m.character} owned={m.owned} meta={meta} showMetrics />
         ))}
       </div>
       <div class="flex flex-wrap gap-1.5">
@@ -349,7 +370,9 @@ function SavedPartyCard({
       <div class="flex flex-wrap gap-2 pt-1">
         <button
           class="btn btn-sm btn-gold"
-          onClick={() => setImprovement(improveTeam(party.members.map((m) => m.character.id), characters, tags, box))}
+          onClick={() =>
+            setImprovement(improveTeam(party.members.map((m) => m.character.id), characters, tags, box, meta))
+          }
         >
           Mejorar equipo
         </button>

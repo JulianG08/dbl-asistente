@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact'
-import type { Character, Element, OwnedUnit, Rarity } from '../types'
-import { ELEMENT_LABEL, RARITY_LABEL } from '../engine'
+import type { Character, Element, MetaData, OwnedUnit, Rarity } from '../types'
+import { attackPower, ELEMENT_LABEL, RARITY_LABEL, tierOf } from '../engine'
 
 export const ELEMENT_COLOR: Record<Element, string> = {
   RED: 'var(--color-red)',
@@ -69,14 +69,65 @@ export function Stars({ stars }: { stars: number }) {
   return <span class="text-[0.72rem] text-gold mono">{stars}★</span>
 }
 
-export function UnitLine({ character, owned }: { character: Character; owned?: OwnedUnit }) {
+export function formatPower(character: Character): string {
+  const atk = attackPower(character)
+  if (!atk) return ''
+  return atk >= 1_000_000 ? `${(atk / 1_000_000).toFixed(1)}M` : `${Math.round(atk / 1000)}k`
+}
+
+export function UnitMetrics({ character, meta }: { character: Character; meta?: MetaData }) {
+  const tier = tierOf(character, meta)?.tier
+  const mechanics = character.mechanics?.length ?? 0
   return (
-    <div class="flex items-center gap-2 min-w-0" title={`${character.name}${character.form ? ` · ${character.form}` : ''} (${character.card})`}>
+    <>
+      {character.maxStats ? (
+        <span class="chip chip-muted" title="Ataque máximo (físico + energía)">
+          {formatPower(character)}
+        </span>
+      ) : null}
+      {tier ? (
+        <span
+          class={tier === 'Z' ? 'chip chip-fire' : tier === 'S' ? 'chip chip-gold' : 'chip chip-muted'}
+          title={`Tier ${tier}${tierOf(character, meta)?.boost ? ` · boost ${tierOf(character, meta)?.boost}` : ''}`}
+        >
+          {tier}
+        </span>
+      ) : null}
+      {mechanics ? (
+        <span class="chip chip-muted" title={`Mecánicas modernas: ${character.mechanics?.join(', ')}`}>
+          ⚙{mechanics}
+        </span>
+      ) : null}
+    </>
+  )
+}
+
+export function UnitLine({
+  character,
+  owned,
+  meta,
+  showMetrics = false
+}: {
+  character: Character
+  owned?: OwnedUnit
+  meta?: MetaData
+  showMetrics?: boolean
+}) {
+  return (
+    <div
+      class={
+        showMetrics
+          ? 'flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0'
+          : 'flex items-center gap-2 min-w-0'
+      }
+      title={`${character.name}${character.form ? ` · ${character.form}` : ''} (${character.card})`}
+    >
       <CharAvatar character={character} size={28} />
       <ElementDot element={character.element} />
-      <span class="truncate text-sm">{character.name}</span>
-      <span class="text-[0.6rem] text-muted mono">{character.card}</span>
+      <span class={showMetrics ? 'truncate text-sm max-w-[46%]' : 'truncate text-sm'}>{character.name}</span>
+      {showMetrics ? null : <span class="text-[0.6rem] text-muted mono">{character.card}</span>}
       <RarityChip rarity={character.rarity} />
+      {showMetrics ? <UnitMetrics character={character} meta={meta} /> : null}
       {owned ? <Stars stars={owned.stars} /> : null}
       {owned && owned.zenkai ? <span class="chip chip-fire">Z{owned.zenkai}</span> : null}
     </div>

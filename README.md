@@ -77,18 +77,20 @@ archivo compatible con “Mi Caja” de dblegends.net.
 
 ## Cómo se calculan las recomendaciones
 
-- **Puntuación de unidad**: rareza + estrellas + nivel Zenkai (+ bonus Legends Limited).
-- **Equipos**: para cada tag con 6+ unidades tuyas se toman los 3 mejores núcleo y 3 banquillo; se suman
-  sinergias de tags secundarios y se premia la cobertura de elementos. Se descartan equipos casi idénticos.
-- **Constructor**: parte de los personajes que elijas y añade el resto maximizando tags compartidos, elementos
-  nuevos y puntuación individual; luego propone equipamiento compatible por condiciones (tags, episodios o
-  exclusivo de personaje) ordenando tu inventario y lo mejor posible.
-- **Actos**: urgencia por tiempo restante + valor de recompensas (cristales, Z Power, tickets…) + etapas.
-  El equipo sugerido usa el elemento que contrarresta a los enemigos (Rojo > Amarillo > Morado > Verde > Azul > Rojo).
+- **Puntuación de unidad (v2)**: rareza × recencia (con `releaseZenkai`, así un Zenkai reciente cuenta como
+  renovación) + stats máximos (ataque físico + energía) + número de mecánicas modernas (Cambio Protector,
+  Resurrección, Medidor único, Robo de cartas…) + tier meta (Z/S/A/B/C de dblegends.app, con bonus de boost) +
+  estrellas y Zenkai. Esto evita que un SP antiguo a 14★ desplace a una ULTRA/LEGEND reciente.
+- **Equipos**: para cada tag con 6+ unidades tuyas se eligen los 3 mejores para el **núcleo** y el **banquillo**
+  se escoge por puntuación + **Habilidad Z que buffea los tags del núcleo**; se premia la cobertura de elementos.
+- **Constructor**: parte de los personajes que elijas y añade el resto maximizando tag, elementos nuevos y
+  puntuación; luego propone equipamiento compatible (tags, episodios o exclusivo de personaje).
+- **Actos**: urgencia por tiempo restante + valor de recompensas + etapas. Equipo sugerido con el elemento que
+  contrarresta a los enemigos (Rojo > Amarillo > Morado > Verde > Azul > Rojo).
 - **Invocaciones**: valor de las destacadas que te faltan (ULTRA/LEGEND pesan más) contra las que ya tienes.
 
-> Los detalles de equipamiento se cachean en `scraper/.cache/` (y en GitHub Actions) para no repetir 945
-> peticiones cada día: sólo se descargan los equipos nuevos.
+> Las fichas de personaje y de equipamiento se cachean en `scraper/.cache/` (y en GitHub Actions): sólo se
+> descargan las unidades nuevas cada día.
 
 ## Despliegue gratis (GitHub Pages)
 
@@ -114,7 +116,7 @@ La PWA se puede instalar desde Chrome en Android (“Añadir a pantalla de inici
 
 ## Roadmap
 
-- Z Ability exacta por unidad (requiere raspar la ficha de cada personaje).
-- Notificaciones de actos a punto de terminar.
-- Comparador de equipos vs. el meta (tier lists de la comunidad).
 - Calcular el "combat rank" del equipamiento al estilo de dblegends.net.
+- Notificaciones de actos a punto de terminar.
+- Calcular el Z Ability exacto (multiplicadores) combinando textos y tags.
+- Historial de meta: evolución de tiers entre temporadas.

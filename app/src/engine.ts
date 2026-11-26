@@ -6,6 +6,8 @@ import type {
   Element,
   Equipment,
   GameEvent,
+  MetaData,
+  MetaUnit,
   OwnedEquipment,
   OwnedUnit,
   Rarity,
@@ -50,28 +52,67 @@ const RARITY_WEIGHT: Record<Rarity, number> = {
   HERO: 1
 }
 
+// Puntuación v2: stats + recencia + mecánicas + meta
+const TIER_WEIGHT: Record<string, number> = { Z: 1, S: 0.8, A: 0.55, B: 0.3, C: 0.1 }
+const STAT_SCALE = 500_000
+const RELEASE_SCALE = 720
+
+export function attackPower(character: Character): number {
+  const stats = character.maxStats
+  return (stats?.sa ?? 0) + (stats?.ba ?? 0)
+}
+
+export function tierOf(character: Character, meta?: MetaData): MetaUnit | undefined {
+  return meta?.tiers?.[character.card]
+}
+
+function recencyFactor(character: Character): number {
+  const effective = Math.max(character.release ?? -1, character.releaseZenkai ?? -1)
+  if (effective < 0) return 0
+  return Math.max(0, Math.min(1, effective / RELEASE_SCALE))
+}
+
+function statsFactor(character: Character): number {
+  if (!character.maxStats) return 0.5
+  return Math.max(0, Math.min(1, attackPower(character) / STAT_SCALE))
+}
+
+function tierFactor(character: Character, meta?: MetaData): number {
+  const unit = tierOf(character, meta)
+  if (!unit?.tier) return 0.4
+  let value = TIER_WEIGHT[unit.tier] ?? 0.4
+  if (unit.boost && ['Z', 'S', 'A'].includes(unit.boost)) value += 0.08
+  return Math.min(1, value)
+}
+
 export interface ScoredUnit {
   character: Character
   owned: OwnedUnit
   score: number
 }
 
-export function unitScore(c: Character, o: OwnedUnit): number {
+export function unitScore(c: Character, o: OwnedUnit, meta?: MetaData): number {
+  const rarity = RARITY_WEIGHT[c.rarity]
+  const recency = recencyFactor(c)
+  const mechanics = Math.min(1, (c.mechanics?.length ?? 0) / 4)
   return (
-    RARITY_WEIGHT[c.rarity] +
-    Math.min(14, o.stars) * 0.12 +
-    Math.min(7, o.zenkai) * 0.15 +
-    (c.lf ? 0.2 : 0)
+    rarity * 2.2 * (0.7 + 0.3 * recency) +
+    statsFactor(c) * 2.0 +
+    mechanics * 0.8 +
+    tierFactor(c, meta) * 1.3 +
+    Math.min(14, o.stars) * 0.1 +
+    Math.min(7, o.zenkai) * 0.12 +
+    (c.lf ? 0.15 : 0)
   )
 }
 
-export function ownedUnits(box: Box, characters: Character[]): ScoredUnit[] {
+export function ownedUnits(box: Box, characters: Character[], meta?: MetaData): ScoredUnit[] {
   const byId = new Map(characters.map((c) => [c.id, c]))
   const out: ScoredUnit[] = []
   for (const [id, owned] of Object.entries(box)) {
     const character = byId.get(Number(id))
     if (!character) continue
-    out.push({ character, owned, score: unitScore(character, owned) })
+    out.push({ character, owned, score: unitScore(character, owned, meta) })
   }
   return out
 }
@@ -107,15 +148,28 @@ function buildTeamPlan(
   tagNames: Map<number, string>,
   team: ScoredUnit[],
   characters: Character[],
-  box: Box
+  box: Box,
+  meta?: MetaData
 ): TeamPlan {
   const tagName = tagNames.get(tagId) ?? `#${tagId}`
   const sorted = [...team].sort((a, b) => b.score - a.score)
   const core = sorted.slice(0, 3)
-  const bench = sorted.slice(3, 6)
+
+  // Banquillo: prioriza quien buffea al núcleo con su Habilidad Z
+  const coreTags = new Set(core.flatMap((u) => u.character.tags))
+  const bench = sorted
+    .slice(3)
+    .map((unit) => {
+      const zHits = (unit.character.zAbilityTags ?? []).filter((t) => coreTags.has(t)).length
+      return { unit, value: unit.score + zHits * 0.35 }
+    })
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 3)
+    .map((x) => x.unit)
+  const teamAll = [...core, ...bench]
 
   const shared = new Map<number, number>()
-  for (const unit of team) {
+  for (const unit of teamAll) {
     for (const t of unit.character.tags) {
       if (t === tagId || !tagNames.has(t)) continue
       shared.set(t, (shared.get(t) ?? 0) + 1)
@@ -129,8 +183,8 @@ function buildTeamPlan(
     .map(([id, count]) => ({ id, name: tagNames.get(id) ?? `#${id}`, count }))
 
   const elements = [...new Set(core.map((u) => u.character.element))]
-  const zenkaiCount = team.filter((u) => u.owned.zenkai >= 1).length
-  const avgStars = team.reduce((sum, u) => sum + u.owned.stars, 0) / Math.max(1, team.length)
+  const zenkaiCount = teamAll.filter((u) => u.owned.zenkai >= 1).length
+  const avgStars = teamAll.reduce((sum, u) => sum + u.owned.stars, 0) / Math.max(1, teamAll.length)
 
   const coreScore = core.reduce((s, u) => s + u.score, 0)
   const benchScore = bench.reduce((s, u) => s + u.score, 0)
@@ -140,7 +194,12 @@ function buildTeamPlan(
 
   const missing = characters
     .filter((c) => !c.extra && c.tags.includes(tagId) && !(String(c.id) in box))
-    .sort((a, b) => b.release - a.release || RARITY_WEIGHT[b.rarity] - RARITY_WEIGHT[a.rarity])
+    .sort(
+      (a, b) =>
+        tierFactor(b, meta) - tierFactor(a, meta) ||
+        b.release - a.release ||
+        RARITY_WEIGHT[b.rarity] - RARITY_WEIGHT[a.rarity]
+    )
     .slice(0, 3)
 
   const reasons: string[] = [`6 unidades con el tag ${tagName}`]
@@ -148,6 +207,10 @@ function buildTeamPlan(
     reasons.push(`sinergia extra en ${synergies.slice(0, 2).map((s) => s.name).join(' y ')}`)
   }
   reasons.push(`elementos del núcleo: ${elements.map((e) => ELEMENT_LABEL[e]).join(', ')}`)
+  const topTier = teamAll.filter((u) => ['Z', 'S'].includes(tierOf(u.character, meta)?.tier ?? '')).length
+  if (topTier) reasons.push(`${topTier} en tier Z/S`)
+  const modern = core.filter((u) => (u.character.mechanics?.length ?? 0) >= 2).length
+  if (modern) reasons.push(`${modern} con mecánicas modernas`)
   if (zenkaiCount) reasons.push(`${zenkaiCount} con Zenkai`)
   if (missing.length) reasons.push(`te falta ${missing[0].name}`)
 
@@ -165,8 +228,14 @@ function buildTeamPlan(
   }
 }
 
-export function recommendTeams(characters: Character[], tags: TagInfo[], box: Box, limit = 8): TeamPlan[] {
-  const owned = ownedUnits(box, characters).filter((u) => !u.character.extra)
+export function recommendTeams(
+  characters: Character[],
+  tags: TagInfo[],
+  box: Box,
+  meta?: MetaData,
+  limit = 8
+): TeamPlan[] {
+  const owned = ownedUnits(box, characters, meta).filter((u) => !u.character.extra)
   const tagNames = new Map(tags.map((t) => [t.id, t.name]))
   const byTag = new Map<number, ScoredUnit[]>()
   for (const unit of owned) {
@@ -182,13 +251,13 @@ export function recommendTeams(characters: Character[], tags: TagInfo[], box: Bo
   for (const [tagId, units] of byTag) {
     if (units.length < 6) continue
     const sorted = [...units].sort((a, b) => b.score - a.score)
-    candidates.push(buildTeamPlan(tagId, tagNames, sorted.slice(0, 6), characters, box))
+    candidates.push(buildTeamPlan(tagId, tagNames, sorted.slice(0, 6), characters, box, meta))
   }
 
   candidates.sort((a, b) => b.score - a.score)
   const picked: TeamPlan[] = []
   for (const team of candidates) {
-    if (picked.some((p) => overlap(p, team) >= 5)) continue
+    if (picked.some((p) => overlap(p, team) >= 4)) continue
     picked.push(team)
     if (picked.length >= limit) break
   }
@@ -204,9 +273,10 @@ export function completeTeam(
   selection: number[],
   characters: Character[],
   tags: TagInfo[],
-  box: Box
+  box: Box,
+  meta?: MetaData
 ): TeamPlan | null {
-  const owned = ownedUnits(box, characters)
+  const owned = ownedUnits(box, characters, meta)
   const ownedById = new Map(owned.map((u) => [u.character.id, u]))
   const charById = new Map(characters.map((c) => [c.id, c]))
   const selected = selection
@@ -216,7 +286,7 @@ export function completeTeam(
       const character = charById.get(id)
       if (!character) return undefined
       const empty = { stars: 0, zenkai: 0 }
-      return { character, owned: empty, score: unitScore(character, empty) }
+      return { character, owned: empty, score: unitScore(character, empty, meta) }
     })
     .filter(Boolean) as ScoredUnit[]
   if (!selected.length) return null
@@ -255,7 +325,7 @@ export function completeTeam(
       team.push(pick)
     }
     if (team.length < 6) continue
-    const plan = buildTeamPlan(tagId, tagNames, team, characters, box)
+    const plan = buildTeamPlan(tagId, tagNames, team, characters, box, meta)
     if (!best || plan.score > best.score) best = plan
   }
   return best
@@ -279,9 +349,10 @@ export function improveTeam(
   members: number[],
   characters: Character[],
   tags: TagInfo[],
-  box: Box
+  box: Box,
+  meta?: MetaData
 ): TeamImprovement | null {
-  const owned = ownedUnits(box, characters)
+  const owned = ownedUnits(box, characters, meta)
   const byId = new Map(owned.map((u) => [u.character.id, u]))
   const current = members.map((id) => byId.get(id)).filter(Boolean) as ScoredUnit[]
   if (!current.length) return null
@@ -296,7 +367,7 @@ export function improveTeam(
   const tagName = tagNames.get(tagId) ?? `#${tagId}`
 
   const currentTeam = current.slice(0, 6)
-  const currentPlan = buildTeamPlan(tagId, tagNames, currentTeam, characters, box)
+  const currentPlan = buildTeamPlan(tagId, tagNames, currentTeam, characters, box, meta)
 
   // Candidatos del mismo tag que no están ya en el equipo
   const currentIds = new Set(currentTeam.map((u) => u.character.id))
@@ -317,7 +388,7 @@ export function improveTeam(
       if (working.some((w) => w.character.id === incoming.character.id)) continue
       for (const outgoing of working) {
         const trial = working.map((w) => (w.character.id === outgoing.character.id ? incoming : w))
-        const plan = buildTeamPlan(tagId, tagNames, trial, characters, box)
+        const plan = buildTeamPlan(tagId, tagNames, trial, characters, box, meta)
         if (plan.score > workingPlan.score + 0.05 && (!bestSwap || plan.score > bestSwap.plan.score)) {
           bestSwap = { incoming, outgoing, team: trial, plan }
         }
@@ -461,7 +532,13 @@ export interface PartyPlan {
   sharedTags: TagSynergy[]
 }
 
-export function analyzeSavedParties(parties: SavedParty[], characters: Character[], tags: TagInfo[], box: Box): PartyPlan[] {
+export function analyzeSavedParties(
+  parties: SavedParty[],
+  characters: Character[],
+  tags: TagInfo[],
+  box: Box,
+  meta?: MetaData
+): PartyPlan[] {
   const byId = new Map(characters.map((c) => [c.id, c]))
   const tagNames = new Map(tags.map((t) => [t.id, t.name]))
   return parties.map((party) => {
@@ -470,7 +547,7 @@ export function analyzeSavedParties(parties: SavedParty[], characters: Character
       const character = byId.get(id)
       if (!character) continue
       const owned = box[String(id)] ?? { stars: 0, zenkai: 0 }
-      members.push({ character, owned, score: unitScore(character, owned) })
+      members.push({ character, owned, score: unitScore(character, owned, meta) })
     }
     const counts = new Map<number, number>()
     for (const m of members) for (const t of m.character.tags) counts.set(t, (counts.get(t) ?? 0) + 1)

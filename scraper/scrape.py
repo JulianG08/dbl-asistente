@@ -135,7 +135,12 @@ def save_asset(client: Client, remote_path: str, dest: Path, stats: dict[str, in
         log(f"aviso: no se pudo descargar {remote_path}: {exc}")
 
 
-def scrape_characters(client: Client, img_dir: Path | None = None) -> dict[str, Any]:
+def scrape_characters(
+    client: Client,
+    img_dir: Path | None = None,
+    cache_dir: Path | None = None,
+    refresh_details: bool = False,
+) -> dict[str, Any]:
     log("personajes: descargando listado")
     doc = client.doc("/characters")
     chars = parse_character_cards(doc)
@@ -169,6 +174,57 @@ def scrape_characters(client: Client, img_dir: Path | None = None) -> dict[str, 
             if c.get("icon"):
                 save_asset(client, f"/assets/card_icons/{c['icon']}", img_dir / "chars" / f"{c['id']}.webp", stats)
         log(f"iconos de personajes: {stats}")
+
+    if cache_dir is not None:
+        char_cache = cache_dir / "characters"
+        tag_lookup: dict[str, int] = {}
+        for key in ("tg", "ep"):
+            for pid, name, *_ in picks.get(key, []):
+                tag_lookup[norm_key(name)] = pid
+        main_chars = [c for c in chars if not c.get("extra")]
+        pending = [
+            c["id"]
+            for c in main_chars
+            if refresh_details or not (char_cache / f"{c['id']}.json").exists()
+        ]
+        log(f"personajes: {len(pending)} fichas por descargar (de {len(main_chars)})")
+
+        details: dict[int, dict[str, Any]] = {}
+        if pending:
+            thread_local = threading.local()
+            progress = {"done": 0}
+
+            def work(cid: int) -> tuple[int, dict[str, Any]]:
+                worker_client = getattr(thread_local, "client", None)
+                if worker_client is None:
+                    worker_client = Client(delay=max(0.15, client.delay * 0.6))
+                    thread_local.client = worker_client
+                return cid, parse_character_detail(worker_client, cid, tag_lookup, char_cache, refresh=refresh_details)
+
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                for cid, detail in pool.map(work, pending):
+                    details[cid] = detail
+                    progress["done"] += 1
+                    if progress["done"] % 100 == 0:
+                        log(f"personajes: {progress['done']}/{len(pending)} fichas")
+
+        for c in main_chars:
+            detail = details.get(c["id"])
+            if detail is None:
+                cache_file = char_cache / f"{c['id']}.json"
+                if cache_file.exists():
+                    try:
+                        detail = json.loads(cache_file.read_text(encoding="utf-8"))
+                    except json.JSONDecodeError:
+                        detail = None
+            if detail:
+                c.update({
+                    "maxStats": detail.get("maxStats") or {},
+                    "mechanics": detail.get("mechanics") or [],
+                    "abilities": detail.get("abilities") or [],
+                    "zAbility": detail.get("zAbility") or "",
+                    "zAbilityTags": detail.get("zAbilityTags") or [],
+                })
 
     return {
         "generatedAt": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
@@ -268,6 +324,7 @@ def parse_banner_pools(doc: LH.HtmlElement) -> list[dict[str, Any]]:
                 "name": (a.get("data-charaname") or "").strip(),
                 "element": a.get("data-element") or "",
                 "rarity": a.get("data-rarity") or "",
+                "card": (a.xpath(".//*[@title]/@title") or [""])[0],
             })
         if "unfeatured" in title.lower():
             continue
@@ -294,6 +351,111 @@ def scrape_banner_detail(client: Client, banner_id: int) -> dict[str, Any]:
 
 EQUIP_RARITY = {5: "Platinum", 4: "Unique", 3: "Gold", 2: "Silver", 1: "Bronze", 0: "Iron", 6: "Event"}
 EFFECT_RE = re.compile(r"^(.*?)\s*([+-]?\d+(?:[.,]\d+)?)%\s*(?:[~-]\s*(\d+(?:[.,]\d+)?)%)?\s*(.*)$")
+
+MECHANIC_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("Cambio Protector", re.compile(r"cambio protector", re.I)),
+    ("Resurrección", re.compile(r"resurrecci[oó]n", re.I)),
+    ("Medidor único", re.compile(r"medidor [uú]nico", re.I)),
+    ("Anulación", re.compile(r"anulaci[oó]n", re.I)),
+    ("Robo de cartas", re.compile(r"robo de \d+ cartas?", re.I)),
+    ("Contraataque", re.compile(r"contraataque", re.I)),
+    ("Destrucción de cartas", re.compile(r"destrucci[oó]n de .{0,30}cartas?", re.I)),
+    ("Inamovible", re.compile(r"inamovible", re.I)),
+    ("Curación", re.compile(r"recuperaci[oó]n de salud", re.I)),
+    ("Tiempo de espera", re.compile(r"tiempo de espera", re.I)),
+]
+
+TAG_ICON_RE = re.compile(r"\{\{ICN:(ChaTag|Epi)\}\}")
+
+
+def norm_key(value: str) -> str:
+    import unicodedata
+
+    return unicodedata.normalize("NFD", value or "").encode("ascii", "ignore").decode().lower().strip()
+
+
+def detect_mechanics(text: str) -> list[str]:
+    return [name for name, pattern in MECHANIC_PATTERNS if pattern.search(text or "")]
+
+
+def z_tags_from_text(text: str, lookup: dict[str, int]) -> list[int]:
+    """Extrae los tags/episodios que buffea una Habilidad Z a partir de su texto."""
+    cleaned = TAG_ICON_RE.sub("", text or "")
+    candidates: list[str] = []
+    for line in cleaned.splitlines():
+        head = line.split("·")[0]
+        if ":" in head:
+            candidates.append(head.split(":")[0])
+    for match in re.finditer(r"para (?:la )?etiqueta ([^\r\n·]+)", cleaned):
+        candidates.append(match.group(1))
+
+    ids: list[int] = []
+    for chunk in candidates:
+        for part in re.split(r",| o | y ", chunk):
+            name = norm_key(part)
+            if not name:
+                continue
+            tag_id = lookup.get(name)
+            if tag_id is not None and tag_id not in ids:
+                ids.append(tag_id)
+    return ids
+
+
+def parse_character_detail(
+    client: Client,
+    char_id: int,
+    tag_lookup: dict[str, int],
+    cache_dir: Path | None,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    cache = cache_dir / f"{char_id}.json" if cache_dir else None
+    if cache and cache.exists() and not refresh:
+        try:
+            return json.loads(cache.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+
+    doc = client.doc(f"/character/{char_id}")
+    data = json_blob(doc, "data")
+    record: dict[str, Any] = {}
+    if isinstance(data, dict):
+        record = data.get(str(char_id)) or (next(iter(data.values())) if data else {})
+    elif isinstance(data, list):
+        record = next((r for r in data if isinstance(r, dict) and int(r.get("id", -1)) == char_id), {})
+        if not record:
+            record = next((r for r in data if isinstance(r, dict)), {})
+    abilities_blob = json_blob(doc, "ab") or {}
+
+    ids = record.get("ab") or {}
+    ability_ids = [ids.get("m")] + list(ids.get("p") or []) + list(ids.get("llz") or [])
+    abilities: list[dict[str, str]] = []
+    for aid in ability_ids:
+        if aid in (None, -1):
+            continue
+        entry = abilities_blob.get(str(aid))
+        if entry and entry[0]:
+            abilities.append({"name": entry[0], "text": (entry[1] or "")[:1200]})
+
+    z_ids = list(ids.get("z") or [])
+    z_texts = []
+    for zid in z_ids:
+        entry = abilities_blob.get(str(zid))
+        if entry and entry[1]:
+            z_texts.append(entry[1])
+    z_combined = "\n".join(z_texts)
+
+    all_text = " ".join(a["text"] for a in abilities)
+    detail = {
+        "maxStats": record.get("max") or {},
+        "mechanics": detect_mechanics(all_text),
+        "abilities": abilities[:6],
+        "zAbility": z_combined[:600],
+        "zAbilityTags": z_tags_from_text(z_combined, tag_lookup),
+    }
+    if cache:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(detail, ensure_ascii=False), encoding="utf-8")
+    return detail
 
 
 def num(value: str | None) -> float | None:
@@ -493,6 +655,37 @@ def scrape_equipment(
     }
 
 
+TIERLIST_URL = "https://dblegends.app/data/tierlist.json"
+
+
+def scrape_meta() -> dict[str, Any]:
+    log("meta: descargando tier list de dblegends.app")
+    r = httpx.get(TIERLIST_URL, headers={"User-Agent": UA}, timeout=60, follow_redirects=True)
+    r.raise_for_status()
+    data = r.json()
+
+    tiers: dict[str, dict[str, Any]] = {}
+    for unit in data.get("units") or []:
+        card = (unit.get("id") or "").strip()
+        if not card:
+            continue
+        entry: dict[str, Any] = {}
+        for key in ("tier", "rank", "score", "boost", "new", "zenkai"):
+            if unit.get(key) is not None:
+                entry[key] = unit[key]
+        if entry:
+            tiers[card] = entry
+
+    return {
+        "generatedAt": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
+        "source": TIERLIST_URL,
+        "lastUpdated": data.get("last_updated") or "",
+        "tierOrder": data.get("tier_order") or [],
+        "tiers": tiers,
+        "boost": data.get("boost") or {},
+    }
+
+
 def event_status(ev: dict[str, Any], now: int) -> str:
     if ev.get("perm"):
         return "permanent"
@@ -594,8 +787,9 @@ def main() -> None:
     ap.add_argument("--delay", type=float, default=0.4, help="segundos entre peticiones")
     ap.add_argument("--skip-details", action="store_true", help="no descargar detalles de actos/invocaciones/equipos")
     ap.add_argument("--refresh-equipment", action="store_true", help="ignora la caché de detalles de equipamiento")
+    ap.add_argument("--refresh-characters", action="store_true", help="ignora la caché de fichas de personajes")
     ap.add_argument("--no-images", action="store_true", help="no descargar iconos")
-    ap.add_argument("--only", choices=["characters", "events", "banners", "equipment"], help="raspar sólo una sección")
+    ap.add_argument("--only", choices=["characters", "events", "banners", "equipment", "meta"], help="raspar sólo una sección")
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -605,9 +799,18 @@ def main() -> None:
     client = Client(delay=args.delay)
 
     if args.only in (None, "characters"):
-        data = scrape_characters(client, img_dir=img_dir)
+        data = scrape_characters(
+            client,
+            img_dir=img_dir,
+            cache_dir=cache_dir,
+            refresh_details=args.refresh_characters,
+        )
         (out / "characters.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         log(f"personajes: {data['count']} guardados")
+    if args.only in (None, "meta"):
+        data = scrape_meta()
+        (out / "meta.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        log(f"meta: {len(data['tiers'])} unidades con tier")
     if args.only in (None, "equipment"):
         data = scrape_equipment(
             client,
@@ -627,11 +830,11 @@ def main() -> None:
         (out / "banners.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         log(f"invocaciones: {len(data['banners'])} guardadas")
 
-    meta = {
+    run = {
         "generatedAt": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
         "source": BASE,
     }
-    (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "run.json").write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
     log(f"listo -> {out}")
 
 

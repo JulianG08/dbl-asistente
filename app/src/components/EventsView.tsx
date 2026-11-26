@@ -1,9 +1,10 @@
 import type { EventPlan } from '../engine'
+import type { MetaData } from '../types'
 import { ELEMENT_LABEL, eventCountdown } from '../engine'
 import { UrgencyBadge } from './Home'
 import { ElementDot, Section, UnitLine } from './ui'
 
-export function EventsView({ plans }: { plans: EventPlan[] }) {
+export function EventsView({ plans, meta }: { plans: EventPlan[]; meta?: MetaData }) {
   return (
     <Section
       title="Actos"
@@ -56,7 +57,7 @@ export function EventsView({ plans }: { plans: EventPlan[] }) {
                   <p class="text-[0.65rem] uppercase tracking-widest text-gold font-bold">Equipo sugerido</p>
                   <div class="grid gap-1 sm:grid-cols-2">
                     {plan.suggested.map((u) => (
-                      <UnitLine key={u.character.id} character={u.character} owned={u.owned} />
+                      <UnitLine key={u.character.id} character={u.character} owned={u.owned} meta={meta} showMetrics />
                     ))}
                   </div>
                   <ul class="text-xs text-muted space-y-0.5">

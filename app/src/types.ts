@@ -15,6 +15,19 @@ export interface Character {
   card: string
   icon?: string
   extra?: boolean
+  maxStats?: MaxStats
+  mechanics?: string[]
+  abilities?: { name: string; text: string }[]
+  zAbility?: string
+  zAbilityTags?: number[]
+}
+
+export interface MaxStats {
+  hp?: number
+  sa?: number
+  ba?: number
+  sd?: number
+  bd?: number
 }
 
 export interface TagInfo {
@@ -76,6 +89,7 @@ export interface BannerPoolUnit {
   name: string
   element: Element
   rarity: Rarity
+  card?: string
 }
 
 export interface BannerPool {
@@ -137,6 +151,25 @@ export interface AppData {
   events: EventsData
   banners: BannersData
   equipment: EquipmentData
+  meta: MetaData
+}
+
+export interface MetaUnit {
+  tier?: string
+  rank?: number
+  score?: number
+  boost?: string
+  new?: boolean
+  zenkai?: boolean
+}
+
+export interface MetaData {
+  generatedAt: string
+  source: string
+  lastUpdated: string
+  tierOrder: string[]
+  tiers: Record<string, MetaUnit>
+  boost?: Record<string, unknown>
 }
 
 export interface EquipmentSlot {

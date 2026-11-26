@@ -73,7 +73,7 @@ export function App() {
   }, [toast])
 
   const teams = useMemo(
-    () => (data ? recommendTeams(data.characters.characters, data.characters.tags, state.box) : []),
+    () => (data ? recommendTeams(data.characters.characters, data.characters.tags, state.box, data.meta) : []),
     [data, state.box]
   )
   const eventPlans = useMemo(
@@ -84,7 +84,13 @@ export function App() {
   const parties = useMemo(
     () =>
       data
-        ? analyzeSavedParties(state.parties, data.characters.characters, data.characters.tags, state.box)
+        ? analyzeSavedParties(
+            state.parties,
+            data.characters.characters,
+            data.characters.tags,
+            state.box,
+            data.meta
+          )
         : [],
     [data, state.parties, state.box]
   )
@@ -242,18 +248,20 @@ export function App() {
             box={state.box}
             equipment={data.equipment.items}
             userEquipment={state.equipment}
+            meta={data.meta}
           />
         ) : tab === 'actos' ? (
-          <EventsView plans={eventPlans} />
+          <EventsView plans={eventPlans} meta={data.meta} />
         ) : (
-          <BannersView plans={bannerPlans} />
+          <BannersView plans={bannerPlans} meta={data.meta} />
         )}
 
         <footer class="mt-10 border-t border-line pt-4 text-[0.68rem] text-muted leading-relaxed">
           <p>
             Datos del juego: es.dblegends.net (v{data?.characters.gameDataVersion ?? '—'}, actualizado{' '}
             {data?.characters.generatedAt ? new Date(data.characters.generatedAt).toLocaleString('es-ES') : '—'}).
-            Proyecto de fans sin afiliación con Bandai Namco. Tu caja se guarda solo en este navegador.
+            Meta: dblegends.app. Proyecto de fans sin afiliación con Bandai Namco. Tu caja se guarda solo en este
+            navegador.
           </p>
           {data ? (
             <p class="mt-1">

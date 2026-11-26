@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { Banner, Box, Character, Equipment, GameEvent } from './types'
-import { completeTeam, equipmentUsableBy, improveTeam, planBanners, planEvents, recommendEquipment, recommendTeams } from './engine'
+import type { Banner, Box, Character, Equipment, GameEvent, MetaData } from './types'
+import {
+  completeTeam,
+  equipmentUsableBy,
+  improveTeam,
+  planBanners,
+  planEvents,
+  recommendEquipment,
+  recommendTeams,
+  unitScore
+} from './engine'
 
 function makeChar(id: number, tags: number[], rarity: Character['rarity'] = 'SPARKING', element: Character['element'] = 'RED'): Character {
   return {
@@ -178,5 +187,63 @@ describe('improveTeam', () => {
     expect(improvement).not.toBeNull()
     expect(improvement!.scoreDelta).toBeGreaterThan(0)
     expect(improvement!.changes.length).toBeGreaterThan(0)
+  })
+})
+
+function makeMeta(tiers: Record<string, { tier: string; boost?: string }>): MetaData {
+  return {
+    generatedAt: '',
+    source: '',
+    lastUpdated: '',
+    tierOrder: ['Z', 'S', 'A', 'B', 'C'],
+    tiers
+  }
+}
+
+describe('puntuación v2 (recencia, stats y meta)', () => {
+  it('una ULTRA reciente supera a un SP antiguo a 14★', () => {
+    const oldUnit = makeChar(1, [1])
+    oldUnit.release = 10
+    oldUnit.releaseZenkai = 10
+    oldUnit.maxStats = { hp: 1_400_000, sa: 105_000, ba: 178_000, sd: 95_000, bd: 94_000 }
+
+    const newUnit = makeChar(2, [1], 'ULTRA')
+    newUnit.release = 700
+    newUnit.maxStats = { hp: 2_490_000, sa: 239_000, ba: 239_000, sd: 164_000, bd: 164_000 }
+    newUnit.mechanics = ['Robo de cartas', 'Anulación']
+
+    const meta = makeMeta({ DBL2: { tier: 'Z' } })
+    const oldScore = unitScore(oldUnit, { stars: 14, zenkai: 0 }, meta)
+    const newScore = unitScore(newUnit, { stars: 8, zenkai: 0 }, meta)
+    expect(newScore).toBeGreaterThan(oldScore)
+  })
+
+  it('el tier meta sube la puntuación', () => {
+    const unit = makeChar(5, [1], 'SPARKING')
+    unit.release = 400
+    const withoutMeta = unitScore(unit, { stars: 10, zenkai: 0 })
+    const withMeta = unitScore(unit, { stars: 10, zenkai: 0 }, makeMeta({ DBL5: { tier: 'Z' } }))
+    expect(withMeta).toBeGreaterThan(withoutMeta)
+  })
+
+  it('una unidad reciente entra al núcleo por delante de antiguas', () => {
+    const characters = Array.from({ length: 6 }, (_, i) => {
+      const c = makeChar(i + 1, [1], i === 0 ? 'ULTRA' : 'SPARKING')
+      c.release = i === 0 ? 700 : 10
+      if (i === 0) c.mechanics = ['Robo de cartas', 'Anulación']
+      return c
+    })
+    const teams = recommendTeams(characters, tags, boxOf([1, 2, 3, 4, 5, 6]))
+    expect(teams[0].core[0].character.id).toBe(1)
+  })
+
+  it('el banquillo prefiere quien buffea al núcleo con su Habilidad Z', () => {
+    const characters = [
+      ...Array.from({ length: 3 }, (_, i) => makeChar(i + 1, [1, 10], 'LEGEND')),
+      ...Array.from({ length: 4 }, (_, i) => makeChar(i + 4, [1], 'SPARKING'))
+    ]
+    characters[5].zAbilityTags = [10]
+    const teams = recommendTeams(characters, tags, boxOf([1, 2, 3, 4, 5, 6, 7]))
+    expect(teams[0].bench.map((u) => u.character.id)).toContain(6)
   })
 })
