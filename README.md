@@ -4,6 +4,8 @@ Asistente personal para **Dragon Ball Legends**: lee tu caja real desde el móvi
 [es.dblegends.net](https://es.dblegends.net) y te dice **qué equipos montar, qué actos priorizar y en qué
 invocaciones tirar**.
 
+**App publicada**: https://juliang08.github.io/dbl-asistente/ (se actualiza sola a diario).
+
 Todo corre en tu navegador (PWA instalable); tu caja no se sube a ningún sitio.
 
 ## Qué hace
@@ -79,11 +81,17 @@ archivo compatible con “Mi Caja” de dblegends.net.
 
 ## Despliegue gratis (GitHub Pages)
 
-El workflow `.github/workflows/deploy.yml` raspa los datos a diario y publica la app:
+El workflow `.github/workflows/deploy.yml` raspa los datos a diario y publica la app. Ya está configurado y
+funcionando: **https://juliang08.github.io/dbl-asistente/**.
 
-1. Sube el repo a GitHub.
-2. *Settings → Pages → Build and deployment → Source*: **GitHub Actions**.
-3. Lanza el workflow “Datos + deploy” (o espera al cron diario).
+Para republicar desde cero (otra máquina, otro fork, etc.) hay un script idempotente:
+
+```bash
+gh auth login --web --scopes repo,workflow   # solo la primera vez
+./scripts/publicar-github.sh
+```
+
+El script crea el repo si no existe, sube `main`, activa Pages con GitHub Actions y lanza el primer deploy.
 
 La PWA se puede instalar desde Chrome en Android (“Añadir a pantalla de inicio”).
 
