@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { Banner, Box, Character, Equipment, GameEvent, MetaData } from './types'
 import {
   completeTeam,
+  equipmentScore,
   equipmentUsableBy,
   improveTeam,
+  parseEffects,
   planBanners,
   planEvents,
   recommendEquipment,
@@ -159,6 +161,60 @@ describe('equipamiento', () => {
     })
     expect(rec.owned.map((p) => p.equip.id)).toEqual([1])
     expect(rec.best[0].equip.id).toBe(2)
+  })
+
+  it('parsea varios efectos dentro del mismo slot', () => {
+    const effects = parseEffects('Salud básica +30% Ataque físico y de energía básicos +60% Daño infligido +330%')
+    expect(effects.map((e) => e.name)).toEqual(['Salud básica', 'Ataque físico y de energía básicos', 'Daño infligido'])
+    expect(effects[2].max).toBe(330)
+  })
+
+  it('prioriza el ataque del rol correcto', () => {
+    const striker = { ...makeChar(1, [8]), maxStats: { hp: 2_000_000, sa: 300_000, ba: 200_000 } }
+    const blast = { ...makeChar(2, [8]), maxStats: { hp: 2_000_000, sa: 200_000, ba: 300_000 } }
+
+    const physical: Equipment = {
+      ...equipTag,
+      id: 10,
+      conditions: [],
+      conditionLabels: [],
+      slots: [{ n: 1, options: ['Ataque físico básico 10.00% ~ 20.00%'] }]
+    }
+    const energy: Equipment = {
+      ...physical,
+      id: 11,
+      slots: [{ n: 1, options: ['Ataque de energía básico 10.00% ~ 20.00%'] }]
+    }
+
+    expect(equipmentScore(physical, striker, 'core', 'attack')).toBeGreaterThan(
+      equipmentScore(energy, striker, 'core', 'attack')
+    )
+    expect(equipmentScore(energy, blast, 'core', 'attack')).toBeGreaterThan(
+      equipmentScore(physical, blast, 'core', 'attack')
+    )
+  })
+
+  it('el banquillo prefiere salud y defensa', () => {
+    const unit = makeChar(1, [8])
+    const attack: Equipment = {
+      ...equipTag,
+      id: 20,
+      conditions: [],
+      conditionLabels: [],
+      slots: [{ n: 1, options: ['Ataque físico básico 20.00% ~ 40.00%'] }]
+    }
+    const defense: Equipment = {
+      ...attack,
+      id: 21,
+      slots: [{ n: 1, options: ['Salud básica +20% | Defensa física básica +20%'] }]
+    }
+
+    expect(equipmentScore(defense, unit, 'core', 'attack')).toBeLessThan(
+      equipmentScore(attack, unit, 'core', 'attack')
+    )
+    expect(equipmentScore(defense, unit, 'bench', 'attack')).toBeGreaterThan(
+      equipmentScore(attack, unit, 'bench', 'attack')
+    )
   })
 })
 

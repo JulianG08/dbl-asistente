@@ -224,6 +224,7 @@ def scrape_characters(
                     "abilities": detail.get("abilities") or [],
                     "zAbility": detail.get("zAbility") or "",
                     "zAbilityTags": detail.get("zAbilityTags") or [],
+                    "artProfile": detail.get("artProfile") or {},
                 })
 
     return {
@@ -444,6 +445,22 @@ def parse_character_detail(
             z_texts.append(entry[1])
     z_combined = "\n".join(z_texts)
 
+    topd = json_blob(doc, "topd") or {}
+    art_profile: dict[str, Any] = {
+        "strike": None,
+        "blast": None,
+        "special": None,
+        "counts": record.get("ar") or {},
+    }
+    for art in topd.get("arts") or []:
+        key = art.get("k")
+        if key == "s":
+            art_profile["strike"] = art.get("at")
+        elif key == "b":
+            art_profile["blast"] = art.get("at")
+        elif key == "p":
+            art_profile["special"] = art.get("at")
+
     all_text = " ".join(a["text"] for a in abilities)
     detail = {
         "maxStats": record.get("max") or {},
@@ -451,6 +468,7 @@ def parse_character_detail(
         "abilities": abilities[:6],
         "zAbility": z_combined[:600],
         "zAbilityTags": z_tags_from_text(z_combined, tag_lookup),
+        "artProfile": art_profile,
     }
     if cache:
         cache.parent.mkdir(parents=True, exist_ok=True)

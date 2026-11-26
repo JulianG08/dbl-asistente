@@ -85,6 +85,9 @@ archivo compatible con “Mi Caja” de dblegends.net.
   se escoge por puntuación + **Habilidad Z que buffea los tags del núcleo**; se premia la cobertura de elementos.
 - **Constructor**: parte de los personajes que elijas y añade el resto maximizando tag, elementos nuevos y
   puntuación; luego propone equipamiento compatible (tags, episodios o exclusivo de personaje).
+- **Equipamiento**: cada efecto del slot se parsea por separado (rango incluido). El **núcleo** prioriza daño
+  infligido y el ataque de su rol (físico o energía según sus stats) y el **banquillo** prioriza salud/defensa.
+  Selector **“Mejor ataque” / “Mejor equilibrio”** para cambiar el criterio.
 - **Actos**: urgencia por tiempo restante + valor de recompensas + etapas. Equipo sugerido con el elemento que
   contrarresta a los enemigos (Rojo > Amarillo > Morado > Verde > Azul > Rojo).
 - **Invocaciones**: valor de las destacadas que te faltan (ULTRA/LEGEND pesan más) contra las que ya tienes.

@@ -412,27 +412,6 @@ export function improveTeam(
 
 // ---------------------------------------------------------------- equipamiento
 
-const EQUIP_RARITY_SCORE: Record<string, number> = {
-  Platinum: 100,
-  Unique: 85,
-  Gold: 70,
-  Silver: 45,
-  Bronze: 30,
-  Event: 55,
-  Iron: 15
-}
-
-const EFFECT_WEIGHTS: [RegExp, number][] = [
-  [/daño infligido/i, 1.1],
-  [/salud/i, 1.0],
-  [/ataque físico|ataque de energía/i, 1.0],
-  [/guardia de daño/i, 0.9],
-  [/defensa física|defensa de energía/i, 0.8],
-  [/daño recibido/i, 0.7],
-  [/crítico/i, 0.4],
-  [/ki/i, 0.3]
-]
-
 function normalizeText(value: string): string {
   return value
     .normalize('NFD')
@@ -455,38 +434,168 @@ export function equipmentUsableBy(equip: Equipment, character: Character): boole
   })
 }
 
-function effectScore(text: string): number {
+const EQUIP_RARITY_SCORE: Record<string, number> = {
+  Platinum: 100,
+  Unique: 85,
+  Gold: 70,
+  Silver: 45,
+  Bronze: 30,
+  Event: 55,
+  Iron: 15
+}
+
+export type EquipRole = 'strike' | 'blast' | 'balanced'
+export type EquipContext = 'core' | 'bench'
+export type EquipMode = 'attack' | 'balanced'
+
+export function equipRole(character: Character): EquipRole {
+  const strike = character.maxStats?.sa ?? 0
+  const blast = character.maxStats?.ba ?? 0
+  if (!strike || !blast) return 'balanced'
+  if (strike > blast * 1.08) return 'strike'
+  if (blast > strike * 1.08) return 'blast'
+  return 'balanced'
+}
+
+export const ROLE_LABEL: Record<EquipRole, string> = {
+  strike: 'físico',
+  blast: 'energía',
+  balanced: 'mixto'
+}
+
+export interface ParsedEffect {
+  name: string
+  min: number
+  max: number
+}
+
+const EFFECT_RE =
+  /([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][\wÁÉÍÓÚÜÑáéíóúüñºª .+&-]{1,70}?)\s*([+-]?\d+(?:[.,]\d+)?)\s*%\s*(?:~\s*(\d+(?:[.,]\d+)?)\s*%)?/g
+
+function toNumber(value: string | undefined): number {
+  return value ? Number(value.replace(',', '.')) : 0
+}
+
+/** Extrae cada efecto con su rango de un texto de slot (puede haber varios en la misma línea). */
+export function parseEffects(text: string): ParsedEffect[] {
+  const out: ParsedEffect[] = []
+  if (!text) return out
+  const normalized = text.replace(/\r\n|\r|\n/g, ' | ')
+  for (const chunk of normalized.split('|')) {
+    const part = chunk.trim()
+    if (!part) continue
+    let matched = false
+    EFFECT_RE.lastIndex = 0
+    for (const match of part.matchAll(EFFECT_RE)) {
+      const name = match[1].trim().replace(/[·]+$/, '').trim()
+      if (!name || name.length < 3) continue
+      out.push({ name, min: toNumber(match[2]), max: toNumber(match[3] ?? match[2]) })
+      matched = true
+    }
+    if (!matched && part.length > 12) {
+      out.push({ name: part.slice(0, 90), min: 0, max: 0 })
+    }
+  }
+  return out
+}
+
+function effectWeight(name: string, role: EquipRole, context: EquipContext, mode: EquipMode): number {
+  const n = name.toLowerCase()
+  if (mode === 'balanced') {
+    if (/daño infligido/.test(n)) return 1.15
+    if (/ataque físico|ataque de energía/.test(n)) return context === 'bench' ? 0.75 : 0.9
+    if (/salud/.test(n)) return context === 'bench' ? 1.15 : 1.0
+    if (/defensa/.test(n)) return context === 'bench' ? 1.0 : 0.85
+    if (/guardia de daño/.test(n)) return context === 'bench' ? 0.9 : 0.8
+    if (/daño (especial|definitiva|de técnica)/.test(n)) return 0.95
+    return 0.5
+  }
+  const benchPenalty = context === 'bench' ? 0.85 : 1
+  if (/daño infligido/.test(n)) return 1.25 * benchPenalty
+  if (/ataque físico/.test(n)) return (role === 'strike' ? 1.15 : role === 'blast' ? 0.7 : 1.0) * benchPenalty
+  if (/ataque de energía/.test(n)) return (role === 'blast' ? 1.15 : role === 'strike' ? 0.7 : 1.0) * benchPenalty
+  if (/daño (especial|definitiva|de técnica)/.test(n)) return context === 'core' ? 0.95 : 0.45
+  if (/salud/.test(n)) return context === 'bench' ? 1.15 : 0.85
+  if (/defensa/.test(n)) return context === 'bench' ? 1.0 : 0.6
+  if (/guardia de daño/.test(n)) return context === 'bench' ? 0.9 : 0.7
+  if (/ki|robo de cartas|tiempo de espera|crítico/.test(n)) return context === 'bench' ? 0.4 : 0.6
+  return 0.35
+}
+
+function slotScore(text: string, role: EquipRole, context: EquipContext, mode: EquipMode): number {
   let total = 0
-  for (const line of text.split(/\n|\|/)) {
-    const clean = line.trim()
-    if (!clean) continue
-    const nums = [...clean.matchAll(/([\d.]+)\s*%/g)].map((m) => Number(m[1]))
-    if (!nums.length) {
-      if (clean.length > 14) total += 1.2
+  for (const effect of parseEffects(text)) {
+    if (effect.max === 0) {
+      total += context === 'core' ? 0.8 : 0.6
       continue
     }
-    const max = Math.max(...nums)
-    let weight = 0.35
-    for (const [re, w] of EFFECT_WEIGHTS) {
-      if (re.test(clean)) {
-        weight = w
-        break
-      }
-    }
-    total += Math.min(max, 150) * weight
+    total += Math.min(effect.max, 120) * effectWeight(effect.name, role, context, mode)
   }
   return total
 }
 
-export function equipmentScore(equip: Equipment): number {
+export function equipmentScore(
+  equip: Equipment,
+  character: Character,
+  context: EquipContext = 'core',
+  mode: EquipMode = 'attack'
+): number {
+  const role = equipRole(character)
   const base = EQUIP_RARITY_SCORE[equip.rarityLabel] ?? 20
   let effects = 0
   for (const slot of equip.slots ?? []) {
     let best = 0
-    for (const option of slot.options) best = Math.max(best, effectScore(option))
-    effects += Math.min(best, 70)
+    for (const option of slot.options) best = Math.max(best, slotScore(option, role, context, mode))
+    effects += Math.min(best, 90)
   }
   return base + effects * 0.5
+}
+
+export interface EquipmentHighlights {
+  primary: string
+  secondary: string
+  slots: string[]
+}
+
+export function equipmentHighlights(
+  equip: Equipment,
+  character: Character,
+  context: EquipContext = 'core',
+  mode: EquipMode = 'attack'
+): EquipmentHighlights {
+  const role = equipRole(character)
+  const slots: string[] = []
+  const effects: { text: string; value: number }[] = []
+
+  for (const slot of equip.slots ?? []) {
+    let bestOption = ''
+    let bestValue = -1
+    for (const option of slot.options) {
+      const value = slotScore(option, role, context, mode)
+      if (value > bestValue) {
+        bestValue = value
+        bestOption = option
+      }
+    }
+    if (bestValue > 0) slots.push(bestOption)
+    for (const option of slot.options) {
+      for (const effect of parseEffects(option)) {
+        const value = effect.max * effectWeight(effect.name, role, context, mode)
+        const range = effect.min && effect.min !== effect.max ? `${effect.min}–${effect.max}%` : `+${effect.max}%`
+        effects.push({ text: `${effect.name} ${range}`, value })
+      }
+    }
+  }
+
+  effects.sort((a, b) => b.value - a.value)
+  return {
+    primary: effects[0]?.text ?? equip.desc ?? '',
+    secondary: effects
+      .slice(1, 3)
+      .map((e) => e.text)
+      .join(' · '),
+    slots
+  }
 }
 
 export interface EquipmentPick {
@@ -497,6 +606,8 @@ export interface EquipmentPick {
 
 export interface EquipmentRecommendation {
   character: Character
+  role: EquipRole
+  context: EquipContext
   owned: EquipmentPick[]
   best: EquipmentPick[]
 }
@@ -504,22 +615,33 @@ export interface EquipmentRecommendation {
 export function recommendEquipment(
   character: Character,
   equipment: Equipment[],
-  userEquipment: Record<string, OwnedEquipment>
+  userEquipment: Record<string, OwnedEquipment>,
+  options: { context?: EquipContext; mode?: EquipMode } = {}
 ): EquipmentRecommendation {
+  const context = options.context ?? 'core'
+  const mode = options.mode ?? 'attack'
   const usable = equipment
     .filter((e) => equipmentUsableBy(e, character))
-    .map((e) => ({ equip: e, score: equipmentScore(e), owned: userEquipment[String(e.id)] ?? null }))
+    .map((e) => ({
+      equip: e,
+      score: equipmentScore(e, character, context, mode),
+      owned: userEquipment[String(e.id)] ?? null
+    }))
   const owned = usable.filter((p) => p.owned).sort((a, b) => b.score - a.score).slice(0, 3)
   const best = [...usable].sort((a, b) => b.score - a.score).slice(0, 3)
-  return { character, owned, best }
+  return { character, role: equipRole(character), context, owned, best }
 }
 
 export function teamEquipment(
   team: TeamPlan,
   equipment: Equipment[],
-  userEquipment: Record<string, OwnedEquipment>
+  userEquipment: Record<string, OwnedEquipment>,
+  mode: EquipMode = 'attack'
 ): EquipmentRecommendation[] {
-  return team.core.concat(team.bench).map((u) => recommendEquipment(u.character, equipment, userEquipment))
+  return [
+    ...team.core.map((u) => recommendEquipment(u.character, equipment, userEquipment, { context: 'core', mode })),
+    ...team.bench.map((u) => recommendEquipment(u.character, equipment, userEquipment, { context: 'bench', mode }))
+  ]
 }
 
 

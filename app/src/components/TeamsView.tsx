@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'preact/hooks'
 import type { Box, Character, Equipment, MetaData, OwnedEquipment, TagInfo } from '../types'
-import type { EquipmentPick, EquipmentRecommendation, PartyPlan, TeamPlan } from '../engine'
-import { completeTeam, ELEMENT_LABEL, improveTeam, recommendEquipment, teamEquipment } from '../engine'
+import type { EquipmentPick, EquipmentRecommendation, EquipContext, EquipMode, PartyPlan, TeamPlan } from '../engine'
+import {
+  completeTeam,
+  ELEMENT_LABEL,
+  equipmentHighlights,
+  improveTeam,
+  recommendEquipment,
+  ROLE_LABEL,
+  teamEquipment
+} from '../engine'
 import { CharAvatar, ElementDot, RarityChip, Section, UnitLine, equipIconUrl } from './ui'
 
 export function TeamsView({
@@ -23,6 +31,8 @@ export function TeamsView({
   userEquipment: Record<string, OwnedEquipment>
   meta?: MetaData
 }) {
+  const [equipMode, setEquipMode] = useState<EquipMode>('attack')
+
   return (
     <div class="space-y-8">
       <TeamBuilder
@@ -32,11 +42,30 @@ export function TeamsView({
         equipment={equipment}
         userEquipment={userEquipment}
         meta={meta}
+        equipMode={equipMode}
       />
 
       <Section
         title="Equipos recomendados"
         subtitle="Calculados con stats, recencia, mecánicas, meta, tags compartidos y cobertura de elementos"
+        action={
+          <div class="flex gap-1" role="group" aria-label="Criterio de equipamiento">
+            <button
+              class={`btn btn-sm ${equipMode === 'attack' ? 'btn-gold' : ''}`}
+              aria-pressed={equipMode === 'attack'}
+              onClick={() => setEquipMode('attack')}
+            >
+              Mejor ataque
+            </button>
+            <button
+              class={`btn btn-sm ${equipMode === 'balanced' ? 'btn-gold' : ''}`}
+              aria-pressed={equipMode === 'balanced'}
+              onClick={() => setEquipMode('balanced')}
+            >
+              Mejor equilibrio
+            </button>
+          </div>
+        }
       >
         {teams.length ? (
           <div class="space-y-4">
@@ -48,6 +77,7 @@ export function TeamsView({
                 equipment={equipment}
                 userEquipment={userEquipment}
                 meta={meta}
+                mode={equipMode}
               />
             ))}
           </div>
@@ -71,6 +101,7 @@ export function TeamsView({
                 equipment={equipment}
                 userEquipment={userEquipment}
                 meta={meta}
+                mode={equipMode}
               />
             ))}
           </div>
@@ -88,7 +119,8 @@ function TeamBuilder({
   box,
   equipment,
   userEquipment,
-  meta
+  meta,
+  equipMode
 }: {
   characters: Character[]
   tags: TagInfo[]
@@ -96,10 +128,11 @@ function TeamBuilder({
   equipment: Equipment[]
   userEquipment: Record<string, OwnedEquipment>
   meta?: MetaData
+  equipMode: EquipMode
 }) {
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState<number[]>([])
-  const [result, setResult] = useState<{ team: TeamPlan; recs: EquipmentRecommendation[] } | null>(null)
+  const [result, setResult] = useState<TeamPlan | null>(null)
   const [error, setError] = useState('')
 
   const allCharacters = useMemo(() => characters.filter((c) => !c.extra), [characters])
@@ -134,7 +167,7 @@ function TeamBuilder({
       return
     }
     setError('')
-    setResult({ team, recs: teamEquipment(team, equipment, userEquipment) })
+    setResult(team)
   }
 
   return (
@@ -200,14 +233,14 @@ function TeamBuilder({
       {result ? (
         <div class="mt-4">
           <TeamCard
-            team={result.team}
+            team={result}
             index={0}
             equipment={equipment}
             userEquipment={userEquipment}
             meta={meta}
-            recs={result.recs}
+            mode={equipMode}
             openEquipment
-            title={`Equipo completado · ${result.team.tag.name}`}
+            title={`Equipo completado · ${result.tag.name}`}
           />
         </div>
       ) : null}
@@ -223,7 +256,7 @@ function TeamCard({
   equipment,
   userEquipment,
   meta,
-  recs,
+  mode,
   openEquipment = false,
   title
 }: {
@@ -232,13 +265,13 @@ function TeamCard({
   equipment: Equipment[]
   userEquipment: Record<string, OwnedEquipment>
   meta?: MetaData
-  recs?: EquipmentRecommendation[]
+  mode: EquipMode
   openEquipment?: boolean
   title?: string
 }) {
   const equipmentRecs = useMemo(
-    () => recs ?? teamEquipment(team, equipment, userEquipment),
-    [recs, team, equipment, userEquipment]
+    () => teamEquipment(team, equipment, userEquipment, mode),
+    [team, equipment, userEquipment, mode]
   )
 
   return (
@@ -289,13 +322,13 @@ function TeamCard({
         ))}
       </div>
 
-      <details class="rounded-xl border border-line bg-panel2/40 p-3" open={openEquipment}>
+      <details class="rounded-xl border border-line bg-panel2/40 p-3" open={openEquipment ? true : undefined}>
         <summary class="text-xs font-bold text-muted uppercase tracking-widest">
           Equipamiento recomendado (lo tuyo + lo mejor)
         </summary>
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
           {equipmentRecs.map((rec) => (
-            <EquipmentForCharacter key={rec.character.id} rec={rec} />
+            <EquipmentForCharacter key={rec.character.id} rec={rec} mode={mode} />
           ))}
         </div>
       </details>
@@ -327,7 +360,8 @@ function SavedPartyCard({
   box,
   equipment,
   userEquipment,
-  meta
+  meta,
+  mode
 }: {
   party: PartyPlan
   characters: Character[]
@@ -336,14 +370,18 @@ function SavedPartyCard({
   equipment: Equipment[]
   userEquipment: Record<string, OwnedEquipment>
   meta?: MetaData
+  mode: EquipMode
 }) {
   const [improvement, setImprovement] = useState<ReturnType<typeof improveTeam>>(null)
   const [showEquipment, setShowEquipment] = useState(false)
 
   const members = party.members
   const recs = useMemo(
-    () => members.flatMap((m) => recommendEquipment(m.character, equipment, userEquipment)),
-    [members, equipment, userEquipment]
+    () =>
+      members.flatMap((m) =>
+        recommendEquipment(m.character, equipment, userEquipment, { context: 'core', mode })
+      ),
+    [members, equipment, userEquipment, mode]
   )
 
   return (
@@ -384,7 +422,7 @@ function SavedPartyCard({
       {showEquipment ? (
         <div class="grid gap-2 sm:grid-cols-2 pt-2">
           {recs.map((rec) => (
-            <EquipmentForCharacter key={rec.character.id} rec={rec} />
+            <EquipmentForCharacter key={rec.character.id} rec={rec} mode={mode} />
           ))}
         </div>
       ) : null}
@@ -411,7 +449,8 @@ function SavedPartyCard({
             {improvement.proposed.map((u) => (
               <EquipmentForCharacter
                 key={u.character.id}
-                rec={recommendEquipment(u.character, equipment, userEquipment)}
+                rec={recommendEquipment(u.character, equipment, userEquipment, { context: 'core', mode })}
+                mode={mode}
               />
             ))}
           </div>
@@ -423,23 +462,40 @@ function SavedPartyCard({
 
 // ---------------------------------------------------------------- equipamiento
 
-function EquipmentForCharacter({ rec }: { rec: EquipmentRecommendation }) {
+function EquipmentForCharacter({ rec, mode }: { rec: EquipmentRecommendation; mode: EquipMode }) {
   const ownedPicks = rec.owned.slice(0, 2)
   const missingPicks = rec.best.filter((p) => !p.owned).slice(0, 2)
 
   return (
     <div class="rounded-lg border border-line bg-panel/60 p-2.5">
-      <div class="flex items-center gap-2 mb-1.5">
+      <div class="flex items-center gap-2 mb-1.5 flex-wrap">
         <CharAvatar character={rec.character} size={24} />
         <span class="text-xs font-bold truncate">{rec.character.name}</span>
+        <span class="chip chip-muted" title="Rol según sus stats de ataque">
+          {ROLE_LABEL[rec.role]}
+        </span>
+        {rec.context === 'bench' ? <span class="chip chip-muted">banquillo</span> : null}
       </div>
       {ownedPicks.length || missingPicks.length ? (
         <div class="space-y-1.5">
           {ownedPicks.map((p) => (
-            <EquipRow key={`own-${p.equip.id}`} pick={p} owned />
+            <EquipRow
+              key={`own-${p.equip.id}`}
+              pick={p}
+              owned
+              character={rec.character}
+              context={rec.context}
+              mode={mode}
+            />
           ))}
           {missingPicks.map((p) => (
-            <EquipRow key={`best-${p.equip.id}`} pick={p} />
+            <EquipRow
+              key={`best-${p.equip.id}`}
+              pick={p}
+              character={rec.character}
+              context={rec.context}
+              mode={mode}
+            />
           ))}
         </div>
       ) : (
@@ -449,10 +505,23 @@ function EquipmentForCharacter({ rec }: { rec: EquipmentRecommendation }) {
   )
 }
 
-function EquipRow({ pick, owned }: { pick: EquipmentPick; owned?: boolean }) {
+function EquipRow({
+  pick,
+  owned,
+  character,
+  context,
+  mode
+}: {
+  pick: EquipmentPick
+  owned?: boolean
+  character: Character
+  context: EquipContext
+  mode: EquipMode
+}) {
   const equip = pick.equip
-  const effect = equip.slots?.[0]?.options?.at(-1) ?? equip.desc ?? ''
+  const highlights = equipmentHighlights(equip, character, context, mode)
   const obtain = equip.obtain?.[0]
+  const tooltip = highlights.slots.join(' | ')
 
   return (
     <div class="flex items-start gap-2">
@@ -470,9 +539,14 @@ function EquipRow({ pick, owned }: { pick: EquipmentPick; owned?: boolean }) {
           <span class="text-[0.72rem] truncate">{equip.name}</span>
           <span class="chip chip-muted">{equip.rarityLabel}</span>
         </div>
-        {effect ? (
-          <p class="text-[0.6rem] text-muted truncate" title={effect}>
-            {effect}
+        {highlights.primary ? (
+          <p class="text-[0.62rem] text-text truncate" title={tooltip}>
+            {highlights.primary}
+          </p>
+        ) : null}
+        {highlights.secondary ? (
+          <p class="text-[0.6rem] text-muted truncate" title={tooltip}>
+            {highlights.secondary}
           </p>
         ) : null}
         <p class={`text-[0.6rem] ${owned ? 'text-gold' : 'text-muted'}`}>
