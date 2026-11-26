@@ -44,10 +44,35 @@ export function Home({
     () => metaCoverage(data.characters.characters, state.box, data.meta, data.banners.banners),
     [data, state.box]
   )
-  const pendingMissions = Object.values(state.missions ?? {}).reduce(
+  const activeMissionIds = useMemo(
+    () => new Set(data.missions.missions.map((mission) => String(mission.id))),
+    [data.missions.missions]
+  )
+  const missionStates = Object.entries(state.missions ?? {})
+    .filter(([id]) => activeMissionIds.has(id))
+    .map(([, value]) => value)
+  const pendingMissions = missionStates.reduce(
     (sum, item) => sum + (item.total != null && item.completed != null ? Math.max(0, item.total - item.completed) : 0),
     0
   )
+  const missionGroupsPending = missionStates.filter(
+    (item) => item.total != null && item.completed != null && item.total > item.completed
+  ).length
+  const rewardsPending = missionStates.reduce(
+    (sum, item) => sum + Math.max(0, (item.rewardsTotal ?? 0) - (item.rewardsClaimed ?? 0)),
+    0
+  )
+  const allTips =
+    pendingMissions > 0
+      ? [
+          {
+            kind: 'caja' as const,
+            title: `Misiones: ${pendingMissions} pendientes`,
+            body: `${missionGroupsPending} grupos con misiones sin completar y ${rewardsPending} recompensas sin reclamar.`
+          },
+          ...tips
+        ]
+      : tips
 
   return (
     <div class="space-y-8">
@@ -161,7 +186,9 @@ export function Home({
       {coverage.total ? (
         <Section
           title="Tu cuenta vs. el meta"
-          subtitle={`Unidades tier Z de dblegends.app · ${coverage.owned}/${coverage.total}`}
+          subtitle={`Unidades meta de dblegends.app · ${Object.entries(coverage.byTier)
+            .map(([tier, value]) => `${tier} ${value.owned}/${value.total}`)
+            .join(' · ')}`}
         >
           <div class="card p-4 space-y-3">
             <div class="h-2 rounded-full bg-panel2 overflow-hidden">
@@ -172,7 +199,7 @@ export function Home({
             </div>
             {coverage.gaps.length ? (
               <div class="flex flex-wrap gap-2">
-                {coverage.gaps.slice(0, 8).map((gap) => (
+                {coverage.gaps.slice(0, 10).map((gap) => (
                   <span class="chip" key={gap.card} title={gap.source ? `Disponible en: ${gap.source}` : 'Sin banner activo'}>
                     <span class={gap.tier === 'Z' ? 'text-fire font-bold' : 'text-gold font-bold'}>{gap.tier}</span>
                     {gap.name}
@@ -181,7 +208,7 @@ export function Home({
                 ))}
               </div>
             ) : (
-              <p class="text-sm text-muted">¡Tienes todas las unidades tier Z! 🎉</p>
+              <p class="text-sm text-muted">¡Tienes todas las unidades Z y S! 🎉</p>
             )}
           </div>
         </Section>
@@ -189,7 +216,7 @@ export function Home({
 
       <Section title="Recomendaciones" subtitle="Generadas a partir de tu caja y los datos del juego">
         <div class="grid gap-3 md:grid-cols-2">
-          {tips.map((tip) => (
+          {allTips.map((tip) => (
             <article class="card p-4">
               <p class="text-[0.65rem] uppercase tracking-[0.2em] font-bold text-gold">{tip.kind}</p>
               <h3 class="font-bold mt-1">{tip.title}</h3>

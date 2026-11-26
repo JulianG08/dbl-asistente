@@ -6,6 +6,7 @@ import {
   equipmentScore,
   equipmentUsableBy,
   improveTeam,
+  metaCoverage,
   parseEffects,
   parseZAbilityText,
   planBanners,
@@ -164,6 +165,49 @@ describe('equipamiento', () => {
     })
     expect(rec.owned.map((p) => p.equip.id)).toEqual([1])
     expect(rec.best[0].equip.id).toBe(2)
+  })
+
+  it('calcula las faltantes al margen del top global', () => {
+    const unit = makeChar(1, [8])
+    const makeEquip = (id: number, rarityLabel: string, rarity: number): Equipment => ({
+      ...equipTag,
+      id,
+      rarity,
+      rarityLabel,
+      conditions: [],
+      conditionLabels: [],
+      slots: [{ n: 1, options: ['Ataque físico básico 10.00% ~ 20.00%'] }]
+    })
+    const equips = [
+      makeEquip(1, 'Platinum', 5),
+      makeEquip(2, 'Unique', 4),
+      makeEquip(3, 'Gold', 3),
+      makeEquip(4, 'Silver', 2),
+      makeEquip(5, 'Bronze', 1)
+    ]
+    // poseemos las 3 mejores
+    const rec = recommendEquipment(unit, equips, {
+      '1': { count: 1, bestRank: 9, bestScore: 99 },
+      '2': { count: 1, bestRank: 9, bestScore: 99 },
+      '3': { count: 1, bestRank: 9, bestScore: 99 }
+    })
+    expect(rec.owned.map((p) => p.equip.id)).toEqual([1, 2, 3])
+    expect(rec.missing.map((p) => p.equip.id)).toEqual([4, 5])
+  })
+
+  it('cuenta los equipos con requisitos no reconocidos como excluidos', () => {
+    const unit = makeChar(1, [8])
+    const equip: Equipment = {
+      ...equipTag,
+      id: 40,
+      conditions: [],
+      conditionLabels: [],
+      requirements: { any: [{ all: [{ kind: 'unknown', value: 'XYZ' }] }] }
+    }
+    const rec = recommendEquipment(unit, [equip], {})
+    expect(rec.excluded).toBe(1)
+    expect(rec.owned).toHaveLength(0)
+    expect(rec.missing).toHaveLength(0)
   })
 
   it('parsea varios efectos dentro del mismo slot', () => {
@@ -393,5 +437,22 @@ describe('puntuación v2 (recencia, stats y meta)', () => {
     characters[5].zAbilityTags = [10]
     const teams = recommendTeams(characters, tags, boxOf([1, 2, 3, 4, 5, 6, 7]))
     expect(teams[0].bench.map((u) => u.character.id)).toContain(6)
+  })
+})
+
+describe('metaCoverage', () => {
+  it('cuenta por tier Z y S y lista las faltantes', () => {
+    const characters = [makeChar(1, [1]), makeChar(2, [1])]
+    const meta: MetaData = {
+      generatedAt: '',
+      source: '',
+      lastUpdated: '',
+      tierOrder: ['Z', 'S', 'A', 'B', 'C'],
+      tiers: { DBL1: { tier: 'Z' }, DBL2: { tier: 'S' } }
+    }
+    const coverage = metaCoverage(characters, boxOf([1]), meta, [])
+    expect(coverage.byTier.Z).toEqual({ total: 1, owned: 1 })
+    expect(coverage.byTier.S).toEqual({ total: 1, owned: 0 })
+    expect(coverage.gaps.map((gap) => gap.card)).toEqual(['DBL2'])
   })
 })

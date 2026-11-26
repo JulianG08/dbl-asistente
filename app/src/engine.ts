@@ -635,7 +635,15 @@ export interface EquipmentRecommendation {
   role: EquipRole
   context: EquipContext
   owned: EquipmentPick[]
+  missing: EquipmentPick[]
   best: EquipmentPick[]
+  excluded: number
+}
+
+function hasUnknownRequirement(equip: Equipment): boolean {
+  return (equip.requirements?.any ?? []).some((clause) =>
+    clause.all.some((atom) => atom.kind === 'unknown')
+  )
 }
 
 export function recommendEquipment(
@@ -653,9 +661,15 @@ export function recommendEquipment(
       score: equipmentScore(e, character, context, mode),
       owned: userEquipment[String(e.id)] ?? null
     }))
-  const owned = usable.filter((p) => p.owned).sort((a, b) => b.score - a.score).slice(0, 3)
-  const best = [...usable].sort((a, b) => b.score - a.score).slice(0, 3)
-  return { character, role: equipRole(character), context, owned, best }
+
+  const ranked = [...usable].sort((a, b) => b.score - a.score)
+  const owned = ranked.filter((p) => p.owned).slice(0, 3)
+  const missing = ranked.filter((p) => !p.owned).slice(0, 3)
+  const excluded = equipment.filter(
+    (e) => hasUnknownRequirement(e) && !equipmentUsableBy(e, character)
+  ).length
+
+  return { character, role: equipRole(character), context, owned, missing, best: ranked.slice(0, 3), excluded }
 }
 
 export function teamEquipment(
@@ -1148,6 +1162,7 @@ export interface MetaGap {
 export interface MetaCoverage {
   total: number
   owned: number
+  byTier: Record<string, { total: number; owned: number }>
   gaps: MetaGap[]
 }
 
@@ -1156,23 +1171,29 @@ export function metaCoverage(
   box: Box,
   meta: MetaData,
   banners: Banner[],
-  tiers: string[] = ['Z']
+  tiers: string[] = ['Z', 'S']
 ): MetaCoverage {
   const byCard = new Map(characters.map((c) => [c.card.toLowerCase(), c]))
   const entries = Object.entries(meta.tiers).filter(([, unit]) => unit.tier && tiers.includes(unit.tier))
+  const byTier: Record<string, { total: number; owned: number }> = {}
+  for (const tier of tiers) byTier[tier] = { total: 0, owned: 0 }
+
   let owned = 0
   const gaps: MetaGap[] = []
 
   for (const [card, unit] of entries) {
     const character = byCard.get(card.toLowerCase())
+    const tier = unit.tier as string
+    byTier[tier].total++
     if (character && String(character.id) in box) {
       owned++
+      byTier[tier].owned++
       continue
     }
     const banner = banners.find((b) => b.pools?.some((p) => p.units.some((u) => u.card === card)))
     gaps.push({
       card,
-      tier: unit.tier,
+      tier,
       name: character?.name ?? card,
       characterId: character?.id,
       source: banner?.name
@@ -1180,7 +1201,7 @@ export function metaCoverage(
   }
 
   gaps.sort((a, b) => (meta.tiers[a.card]?.rank ?? 999) - (meta.tiers[b.card]?.rank ?? 999))
-  return { total: entries.length, owned, gaps }
+  return { total: entries.length, owned, byTier, gaps }
 }
 
 export interface Tip {

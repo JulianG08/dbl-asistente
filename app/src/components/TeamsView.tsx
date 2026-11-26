@@ -492,8 +492,8 @@ function SavedPartyCard({
 // ---------------------------------------------------------------- equipamiento
 
 function EquipmentForCharacter({ rec, mode }: { rec: EquipmentRecommendation; mode: EquipMode }) {
-  const ownedPicks = rec.owned.slice(0, 2)
-  const missingPicks = rec.best.filter((p) => !p.owned).slice(0, 2)
+  const ownedPicks = rec.owned.slice(0, 3)
+  const missingPicks = rec.missing.slice(0, 3)
 
   return (
     <div class="rounded-lg border border-line bg-panel/60 p-2.5">
@@ -530,6 +530,11 @@ function EquipmentForCharacter({ rec, mode }: { rec: EquipmentRecommendation; mo
       ) : (
         <p class="text-[0.65rem] text-muted">No encontré equipamiento compatible con este personaje.</p>
       )}
+      {rec.excluded > 0 ? (
+        <p class="text-[0.58rem] text-muted italic mt-1">
+          ⚠ {rec.excluded} equipos con requisitos no reconocidos (excluidos)
+        </p>
+      ) : null}
     </div>
   )
 }

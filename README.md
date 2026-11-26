@@ -21,7 +21,7 @@ Todo corre en tu navegador (PWA instalable); tu caja no se sube a ningún sitio.
 - **Invocaciones**: veredicto *TIRAR / CONSIDERAR / AHORRA* según las unidades destacadas que ya tienes.
 - **Guías**: recomendaciones generadas (equipo estrella, acto urgente, siguiente mejora de tu caja).
 - **Tu plan**: acciones concretas (qué subir a 14★, qué Zenkai despertar, qué unidad buscar en banners).
-- **Tu cuenta vs. el meta**: cuántas unidades tier Z tienes y cuáles te faltan con su banner.
+- **Tu cuenta vs. el meta**: cuántas unidades **tier Z y S** tienes y cuáles te faltan con su banner.
 - **Avisos**: actos que cierran en las próximas 48 h (“Se te escapa”).
 - **Misiones**: catálogo de grupos de misiones activos con sus recompensas (Z Power, cristales…) y **tu progreso
   real** (completadas/total y recompensas sin reclamar) leído de tu guardado.
@@ -94,6 +94,7 @@ archivo compatible con “Mi Caja” de dblegends.net.
   puntuación; luego propone equipamiento compatible (tags, episodios o exclusivo de personaje).
 - **Equipamiento**: cada efecto del slot se parsea por separado (rango incluido). El **núcleo** prioriza daño
   infligido y el ataque de su rol (físico o energía según sus stats) y el **banquillo** prioriza salud/defensa.
+  Muestra hasta **3 equipos que ya tienes + 3 alternativas** por personaje, con el requisito visible.
   Selector **“Mejor ataque” / “Mejor equilibrio”** para cambiar el criterio.
 - **Ability Bonus (estimado)**: se parsean las Habilidades Z (tags/episodios que buffean y valor por nivel,
   con nivel según estrellas) y se suman los buffs que cada miembro aplica a sus aliados; el Líder recibe todo.
