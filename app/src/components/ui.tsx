@@ -21,6 +21,38 @@ export function ElementDot({ element, withLabel = false }: { element: Element; w
   )
 }
 
+export function charIconUrl(id: number): string {
+  return `${import.meta.env.BASE_URL}img/chars/${id}.webp`
+}
+
+export function equipIconUrl(id: number): string {
+  return `${import.meta.env.BASE_URL}img/equips/${id}.webp`
+}
+
+export function CharAvatar({
+  character,
+  size = 28,
+  className = ''
+}: {
+  character: { id: number }
+  size?: number
+  className?: string
+}) {
+  return (
+    <img
+      src={charIconUrl(character.id)}
+      alt=""
+      class={`rounded-md object-cover bg-panel2 shrink-0 ${className}`}
+      style={{ width: `${size}px`, height: `${size}px` }}
+      loading="lazy"
+      decoding="async"
+      onError={(e) => {
+        ;(e.currentTarget as HTMLImageElement).style.visibility = 'hidden'
+      }}
+    />
+  )
+}
+
 export function RarityChip({ rarity }: { rarity: Rarity }) {
   const cls =
     rarity === 'LEGEND'
@@ -40,6 +72,7 @@ export function Stars({ stars }: { stars: number }) {
 export function UnitLine({ character, owned }: { character: Character; owned?: OwnedUnit }) {
   return (
     <div class="flex items-center gap-2 min-w-0" title={`${character.name}${character.form ? ` · ${character.form}` : ''} (${character.card})`}>
+      <CharAvatar character={character} size={28} />
       <ElementDot element={character.element} />
       <span class="truncate text-sm">{character.name}</span>
       <span class="text-[0.6rem] text-muted mono">{character.card}</span>

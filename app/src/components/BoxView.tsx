@@ -2,7 +2,7 @@ import { useMemo, useState } from 'preact/hooks'
 import type { Character, Element, Rarity } from '../types'
 import type { BoxState } from '../box'
 import { ELEMENT_LABEL } from '../engine'
-import { ElementDot, RarityChip, Section } from './ui'
+import { CharAvatar, ElementDot, RarityChip, Section } from './ui'
 
 const ELEMENTS: Element[] = ['RED', 'YEL', 'PUR', 'GRN', 'BLU', 'LGT', 'DRK']
 const RARITIES: Rarity[] = ['LEGEND', 'ULTRA', 'SPARKING', 'EXTREME', 'HERO']
@@ -123,13 +123,18 @@ export function BoxView({
                 onClick={() => onToggle(c.id)}
                 title={`${c.name}${c.form ? ` · ${c.form}` : ''} (${c.card})`}
               >
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <ElementDot element={c.element} withLabel />
-                  <RarityChip rarity={c.rarity} />
-                  {c.lf ? <span class="chip chip-fire">LL</span> : null}
-                  {c.zenkai ? <span class="chip chip-muted">ZK</span> : null}
+                <div class="flex gap-2 min-w-0">
+                  <CharAvatar character={c} size={46} />
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[0.82rem] leading-tight min-h-[2.2em] line-clamp-2">{c.name}</div>
+                    <div class="flex items-center gap-1.5 flex-wrap mt-1">
+                      <ElementDot element={c.element} />
+                      <RarityChip rarity={c.rarity} />
+                      {c.lf ? <span class="chip chip-fire">LL</span> : null}
+                      {c.zenkai ? <span class="chip chip-muted">ZK</span> : null}
+                    </div>
+                  </div>
                 </div>
-                <div class="text-[0.82rem] leading-tight min-h-[2.2em] line-clamp-2">{c.name}</div>
                 <div class="flex items-center justify-between">
                   <span class={owned ? 'chip chip-gold' : 'chip chip-muted'}>{owned ? `${owned.stars}★` : '—'}</span>
                   {owned && owned.zenkai ? <span class="chip chip-fire">Z{owned.zenkai}</span> : null}

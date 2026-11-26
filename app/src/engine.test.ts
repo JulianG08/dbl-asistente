@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Banner, Box, Character, GameEvent } from './types'
-import { planBanners, planEvents, recommendTeams } from './engine'
+import type { Banner, Box, Character, Equipment, GameEvent } from './types'
+import { completeTeam, equipmentUsableBy, improveTeam, planBanners, planEvents, recommendEquipment, recommendTeams } from './engine'
 
 function makeChar(id: number, tags: number[], rarity: Character['rarity'] = 'SPARKING', element: Character['element'] = 'RED'): Character {
   return {
@@ -103,5 +103,80 @@ describe('planBanners', () => {
     b.type_label = 'Ticket'
     const plans = planBanners([b], {})
     expect(plans[0].verdict).toBe('TICKETS')
+  })
+})
+
+describe('equipamiento', () => {
+  const equipTag: Equipment = {
+    id: 1,
+    name: 'Equip de tag',
+    rarity: 3,
+    rarityLabel: 'Gold',
+    icon: '',
+    conditions: [8],
+    conditionLabels: ['Saiyajin Híbrido'],
+    exclusive: true,
+    awakenedFrom: 0,
+    release: 0,
+    slots: [{ n: 1, options: ['Ataque físico básico 10.00% ~ 30.00%'] }],
+    obtain: [{ kind: 'Missions', name: 'Misión de prueba', href: '', note: '' }]
+  }
+
+  const equipCard: Equipment = {
+    ...equipTag,
+    id: 2,
+    name: 'Equip exclusivo',
+    rarityLabel: 'Platinum',
+    conditions: [60454],
+    conditionLabels: ['DBL42-01U'],
+    slots: [{ n: 1, options: ['Salud básica +30%', 'Daño infligido +25%'] }]
+  }
+
+  it('detecta equipamiento usable por tag', () => {
+    expect(equipmentUsableBy(equipTag, makeChar(1, [8]))).toBe(true)
+    expect(equipmentUsableBy(equipTag, makeChar(2, [1, 2]))).toBe(false)
+  })
+
+  it('detecta equipamiento exclusivo por carta', () => {
+    const exclusive = { ...makeChar(3, [1]), card: 'DBL42-01U' }
+    expect(equipmentUsableBy(equipCard, exclusive)).toBe(true)
+    expect(equipmentUsableBy(equipCard, makeChar(4, [1]))).toBe(false)
+  })
+
+  it('recomienda lo que ya tienes y ordena lo mejor por puntuación', () => {
+    const unit = { ...makeChar(1, [8]), card: 'DBL42-01U' }
+    const rec = recommendEquipment(unit, [equipTag, equipCard], {
+      '1': { count: 2, bestRank: 3, bestScore: 90 }
+    })
+    expect(rec.owned.map((p) => p.equip.id)).toEqual([1])
+    expect(rec.best[0].equip.id).toBe(2)
+  })
+})
+
+describe('completeTeam', () => {
+  it('completa el equipo con personajes que comparten tag', () => {
+    const characters = Array.from({ length: 8 }, (_, i) => makeChar(i + 1, [1]))
+    const team = completeTeam([1, 2], characters, tags, boxOf([1, 2, 3, 4, 5, 6, 7, 8]))
+    expect(team).not.toBeNull()
+    expect(team!.core.length + team!.bench.length).toBe(6)
+    const ids = [...team!.core, ...team!.bench].map((u) => u.character.id)
+    expect(ids).toContain(1)
+    expect(ids).toContain(2)
+  })
+
+  it('devuelve null sin selección', () => {
+    expect(completeTeam([], [], tags, {})).toBeNull()
+  })
+})
+
+describe('improveTeam', () => {
+  it('propone cambios cuando hay unidades mejores fuera del equipo', () => {
+    const characters = Array.from({ length: 8 }, (_, i) =>
+      makeChar(i + 1, [1], i >= 6 ? 'LEGEND' : 'SPARKING')
+    )
+    const improvement = improveTeam([1, 2, 3, 4, 5, 6], characters, tags, boxOf([1, 2, 3, 4, 5, 6, 7, 8]))
+    expect(improvement).not.toBeNull()
+    expect(improvement!.scoreDelta).toBeGreaterThan(0)
+    expect(improvement!.changes.length).toBeGreaterThan(0)
   })
 })

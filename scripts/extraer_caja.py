@@ -154,12 +154,31 @@ def parse_save(data: dict[str, Any]) -> dict[str, Any] | None:
             "members": members,
         })
 
+    equipment: dict[str, dict[str, Any]] = {}
+    for item in items.get("equipItems_") or []:
+        equip_id = item.get("equipId")
+        if equip_id is None:
+            continue
+        key = str(int(equip_id))
+        entry = equipment.setdefault(key, {"count": 0, "bestRank": None, "bestScore": None})
+        entry["count"] += 1
+        rank = item.get("rank")
+        score = item.get("score")
+        if isinstance(score, (int, float)):
+            entry["bestScore"] = score if entry["bestScore"] is None else max(entry["bestScore"], score)
+        if isinstance(rank, (int, float)):
+            entry["bestRank"] = rank if entry["bestRank"] is None else max(entry["bestRank"], rank)
+
+    ever_owned = (items.get("givenEquipInfo_") or {}).get("everGivenIdList") or []
+
     return {
-        "format": "dbl-asistente/caja-v1",
+        "format": "dbl-asistente/caja-v2",
         "generatedAt": datetime.now(tz=timezone.utc).isoformat(timespec="seconds"),
         "source": "adb",
         "romVersion": str(data.get("romVersion") or ""),
         "units": units,
+        "equipment": equipment,
+        "everOwnedEquipment": [int(x) for x in ever_owned],
         "parties": parties,
     }
 
@@ -262,6 +281,7 @@ def main() -> None:
     log(f"✔ caja guardada en {out_path}")
     log(f"  jugador: {save_data.get('playerName') or '(sin nombre)'}")
     log(f"  unidades: {len(units)} | 14★: {s14} | zenkai: {zk} | equipos: {len(save_data['parties'])}")
+    log(f"  equipamiento: {len(save_data.get('equipment') or {})} objetos distintos")
     log(f"  romVersion: {save_data.get('romVersion')}")
 
 

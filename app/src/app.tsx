@@ -168,7 +168,8 @@ export function App() {
               <div class="leading-tight min-w-0">
                 <p class="font-extrabold tracking-wide text-sm">DBL ASISTENTE</p>
                 <p class="text-[0.62rem] text-muted truncate">
-                  {stats.owned} personajes · {stats.maxed} a 14★ · {stats.zenkai} Zenkai
+                  {stats.owned} personajes · {stats.maxed} a 14★ · {stats.zenkai} Zenkai ·{' '}
+                  {Object.keys(state.equipment).length} equips
                 </p>
               </div>
             </div>
@@ -233,7 +234,15 @@ export function App() {
             onReset={resetBox}
           />
         ) : tab === 'equipos' ? (
-          <TeamsView teams={teams} parties={parties} />
+          <TeamsView
+            teams={teams}
+            parties={parties}
+            characters={data.characters.characters}
+            tags={data.characters.tags}
+            box={state.box}
+            equipment={data.equipment.items}
+            userEquipment={state.equipment}
+          />
         ) : tab === 'actos' ? (
           <EventsView plans={eventPlans} />
         ) : (

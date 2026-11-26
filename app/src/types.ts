@@ -13,6 +13,7 @@ export interface Character {
   release: number
   releaseZenkai: number
   card: string
+  icon?: string
   extra?: boolean
 }
 
@@ -126,6 +127,8 @@ export interface CajaFile {
   playerName?: string
   player?: { name?: string; playerId?: string; friendCode?: string }
   units: Box
+  equipment?: Record<string, OwnedEquipment>
+  everOwnedEquipment?: number[]
   parties: SavedParty[]
 }
 
@@ -133,4 +136,49 @@ export interface AppData {
   characters: CharactersData
   events: EventsData
   banners: BannersData
+  equipment: EquipmentData
+}
+
+export interface EquipmentSlot {
+  n: number
+  options: string[]
+}
+
+export interface EquipmentObtain {
+  kind: string
+  name: string
+  href: string
+  note: string
+}
+
+export interface Equipment {
+  id: number
+  name: string
+  rarity: number
+  rarityLabel: string
+  icon: string
+  conditions: number[]
+  conditionLabels: string[]
+  exclusive: boolean
+  awakenedFrom: number
+  release: number
+  desc?: string
+  equippable?: string
+  slots?: EquipmentSlot[]
+  obtain?: EquipmentObtain[]
+}
+
+export interface EquipmentData {
+  generatedAt: string
+  gameDataVersion: string
+  count: number
+  rarityLabels: Record<string, string>
+  conditions: Record<string, string>
+  items: Equipment[]
+}
+
+export interface OwnedEquipment {
+  count: number
+  bestRank: number | null
+  bestScore: number | null
 }

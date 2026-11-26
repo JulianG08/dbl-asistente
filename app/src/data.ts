@@ -1,4 +1,4 @@
-import type { AppData, CharactersData, EventsData, BannersData } from './types'
+import type { AppData, CharactersData, EventsData, BannersData, EquipmentData } from './types'
 
 const base = import.meta.env.BASE_URL
 
@@ -9,12 +9,13 @@ async function getJson<T>(file: string): Promise<T> {
 }
 
 export async function loadData(): Promise<AppData> {
-  const [characters, events, banners] = await Promise.all([
+  const [characters, events, banners, equipment] = await Promise.all([
     getJson<CharactersData>('characters.json'),
     getJson<EventsData>('events.json'),
-    getJson<BannersData>('banners.json')
+    getJson<BannersData>('banners.json'),
+    getJson<EquipmentData>('equipment.json')
   ])
-  return { characters, events, banners }
+  return { characters, events, banners, equipment }
 }
 
 export function formatDate(ts: number): string {

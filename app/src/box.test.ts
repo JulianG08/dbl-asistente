@@ -25,6 +25,20 @@ describe('importBoxFile', () => {
     expect(state.parties).toHaveLength(1)
   })
 
+  it('lee caja v2 con inventario de equipamiento', async () => {
+    const caja = {
+      format: 'dbl-asistente/caja-v2',
+      units: { '751': { stars: 14, zenkai: 0 } },
+      equipment: { '1771': { count: 2, bestRank: 4, bestScore: 98.5 } },
+      everOwnedEquipment: [1771, 100],
+      parties: []
+    }
+    const file = new File([JSON.stringify(caja)], 'caja.json', { type: 'application/json' })
+    const { state } = await importBoxFile(file)
+    expect(state.equipment['1771']).toEqual({ count: 2, bestRank: 4, bestScore: 98.5 })
+    expect(state.everOwnedEquipment).toEqual([1771, 100])
+  })
+
   it('lee el export de Mi Caja de dblegends.net', async () => {
     const box = { '751': { unlocked: true, stars: 10, zenkai: true, zenkaiLvl: 3 } }
     const file = new File([JSON.stringify(box)], 'box.json', { type: 'application/json' })
@@ -38,7 +52,12 @@ describe('importBoxFile', () => {
       unit: { unitInfo_: [{ id: 10 }, { id: 20 }] },
       item: {
         characterShards_: [{ characterType: 10, count: 9999 }],
-        characterPlentyShards_: [{ characterType: 10, count: 5000 }]
+        characterPlentyShards_: [{ characterType: 10, count: 5000 }],
+        equipItems_: [
+          { equipId: 1771, rank: 2, score: 80 },
+          { equipId: 1771, rank: 4, score: 95 }
+        ],
+        givenEquipInfo_: { everGivenIdList: [1771, 100] }
       }
     }
     const text = JSON.stringify(save)
@@ -48,5 +67,7 @@ describe('importBoxFile', () => {
     expect(kind).toBe('save')
     expect(state.box['10']).toEqual({ stars: 14, zenkai: 5 })
     expect(state.box['20']).toEqual({ stars: 0, zenkai: 0 })
+    expect(state.equipment['1771']).toEqual({ count: 2, bestRank: 4, bestScore: 95 })
+    expect(state.everOwnedEquipment).toEqual([1771, 100])
   })
 })

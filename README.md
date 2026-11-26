@@ -10,21 +10,26 @@ Todo corre en tu navegador (PWA instalable); tu caja no se sube a ningún sitio.
 
 ## Qué hace
 
-- **Mi caja**: importa tu cuenta real (629 personajes, estrellas y Zenkai) o edítala a mano.
+- **Mi caja**: importa tu cuenta real (629 personajes, estrellas, Zenkai **y tu inventario de equipamiento**) o edítala a mano.
 - **Equipos**: recomienda combinaciones por tags compartidos, Z Ability aproximada, cobertura de elementos,
   estrellas y Zenkai. Incluye tus 7 equipos guardados del juego.
+- **Constructor de equipo**: elige 1–6 personajes y completa el resto por sinergia; añade **equipamiento recomendado
+  por personaje** (lo que ya tienes + lo mejor posible con cómo conseguirlo).
+- **Mejorar equipo**: cada equipo guardado propone cambios concretos (*cambia X por Y*) con su equipamiento.
 - **Actos**: prioriza los eventos activos por tiempo restante, recompensas y dificultad, con equipo sugerido
   según los elementos de los enemigos, etapas, drops y retos.
 - **Invocaciones**: veredicto *TIRAR / CONSIDERAR / AHORRA* según las unidades destacadas que ya tienes.
 - **Guías**: recomendaciones generadas (equipo estrella, acto urgente, siguiente mejora de tu caja).
+- **Imágenes**: iconos de personajes y equipamiento empaquetados en el repo (cargan offline).
 
 ## Estructura
 
 ```
-scraper/            Raspador de es.dblegends.net -> JSON (Python + httpx + lxml)
+scraper/            Raspador de es.dblegends.net -> JSON + imágenes (Python + httpx + lxml)
 scripts/            Extracción de la caja desde el móvil (ADB) + decodificador del guardado
 app/                PWA (TypeScript + Vite + Preact + Tailwind + vite-plugin-pwa)
-app/public/data/    JSON generados (personajes, actos, invocaciones)
+app/public/data/    JSON generados (personajes, equipamiento, actos, invocaciones)
+app/public/img/     Iconos de personajes y equipamiento
 .github/workflows/  Raspado diario + despliegue en GitHub Pages
 ```
 
@@ -57,8 +62,8 @@ npm run dev        # http://localhost:5173
 4. En la app: **Importar** → selecciona `caja.json`.
 
 El script localiza el guardado del juego (`/sdcard/Android/data/com.bandainamcoent.dblegends_ww/files/`),
-lo decodifica (JSON con bytes invertidos XOR 0xFF) y extrae unidades, estrellas, Zenkai y equipos.
-Si tu móvil no permite ADB, también puedes usar la app sin extracción:
+lo decodifica (JSON con bytes invertidos XOR 0xFF) y extrae unidades, estrellas, Zenkai, equipos y tu
+**inventario de equipamiento** (formato `caja-v2`). Si tu móvil no permite ADB, también puedes usar la app sin extracción:
 
 - Export de **“Mi Caja”** de dblegends.net → **Importar** (formato propio del sitio).
 - Carga manual tocando personajes en la pestaña **Mi caja**.
@@ -75,9 +80,15 @@ archivo compatible con “Mi Caja” de dblegends.net.
 - **Puntuación de unidad**: rareza + estrellas + nivel Zenkai (+ bonus Legends Limited).
 - **Equipos**: para cada tag con 6+ unidades tuyas se toman los 3 mejores núcleo y 3 banquillo; se suman
   sinergias de tags secundarios y se premia la cobertura de elementos. Se descartan equipos casi idénticos.
+- **Constructor**: parte de los personajes que elijas y añade el resto maximizando tags compartidos, elementos
+  nuevos y puntuación individual; luego propone equipamiento compatible por condiciones (tags, episodios o
+  exclusivo de personaje) ordenando tu inventario y lo mejor posible.
 - **Actos**: urgencia por tiempo restante + valor de recompensas (cristales, Z Power, tickets…) + etapas.
   El equipo sugerido usa el elemento que contrarresta a los enemigos (Rojo > Amarillo > Morado > Verde > Azul > Rojo).
 - **Invocaciones**: valor de las destacadas que te faltan (ULTRA/LEGEND pesan más) contra las que ya tienes.
+
+> Los detalles de equipamiento se cachean en `scraper/.cache/` (y en GitHub Actions) para no repetir 945
+> peticiones cada día: sólo se descargan los equipos nuevos.
 
 ## Despliegue gratis (GitHub Pages)
 
@@ -103,7 +114,7 @@ La PWA se puede instalar desde Chrome en Android (“Añadir a pantalla de inici
 
 ## Roadmap
 
-- Mapeo de equipamiento (los IDs de equipo del guardado) a la base de datos de equips.
 - Z Ability exacta por unidad (requiere raspar la ficha de cada personaje).
 - Notificaciones de actos a punto de terminar.
 - Comparador de equipos vs. el meta (tier lists de la comunidad).
+- Calcular el "combat rank" del equipamiento al estilo de dblegends.net.

@@ -1,7 +1,7 @@
 import type { BannerPlan } from '../engine'
 import { formatCountdown } from '../data'
 import { VerdictBadge } from './Home'
-import { ElementDot, RarityChip, Section } from './ui'
+import { ElementDot, RarityChip, Section, charIconUrl } from './ui'
 
 export function BannersView({ plans }: { plans: BannerPlan[] }) {
   return (
@@ -51,6 +51,15 @@ export function BannersView({ plans }: { plans: BannerPlan[] }) {
                           const owned = featured.some((f) => f.unit.id === unit.id && f.owned)
                           return (
                             <span class={owned ? 'chip chip-gold' : 'chip'} key={`${pool.title}-${unit.id}`}>
+                              <img
+                                src={charIconUrl(unit.id)}
+                                alt=""
+                                class="h-5 w-5 rounded object-cover"
+                                loading="lazy"
+                                onError={(e) => {
+                                  ;(e.currentTarget as HTMLImageElement).style.visibility = 'hidden'
+                                }}
+                              />
                               <ElementDot element={unit.element} />
                               {unit.name}
                               <RarityChip rarity={unit.rarity} />

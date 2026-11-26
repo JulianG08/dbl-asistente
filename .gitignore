@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+scraper/.cache/
 node_modules/
 app/dist/
 app/dev-dist/

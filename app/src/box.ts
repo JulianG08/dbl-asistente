@@ -1,9 +1,11 @@
-import type { Box, CajaFile, OwnedUnit, SavedParty } from './types'
+import type { Box, CajaFile, OwnedEquipment, OwnedUnit, SavedParty } from './types'
 
 const KEY = 'dbl-asistente/caja-v1'
 
 export interface BoxState {
   box: Box
+  equipment: Record<string, OwnedEquipment>
+  everOwnedEquipment: number[]
   parties: SavedParty[]
   playerName?: string
   importedAt?: string
@@ -12,16 +14,22 @@ export interface BoxState {
 export const STAR_THRESHOLDS = [100, 200, 400, 700, 1400, 1900, 2400, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 9999]
 
 export function emptyState(): BoxState {
-  return { box: {}, parties: [] }
+  return { box: {}, equipment: {}, everOwnedEquipment: [], parties: [] }
 }
 
 export function loadState(): BoxState {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return emptyState()
-    const parsed = JSON.parse(raw) as BoxState
+    const parsed = JSON.parse(raw) as Partial<BoxState>
     if (!parsed || typeof parsed !== 'object' || !parsed.box) return emptyState()
-    return { ...emptyState(), ...parsed }
+    return {
+      ...emptyState(),
+      ...parsed,
+      equipment: parsed.equipment ?? {},
+      everOwnedEquipment: parsed.everOwnedEquipment ?? [],
+      parties: parsed.parties ?? []
+    }
   } catch {
     return emptyState()
   }
@@ -58,14 +66,16 @@ function tryJson(bytes: Uint8Array): unknown | null {
 function fromRawSave(data: Record<string, unknown>): BoxState | null {
   const unit = data.unit as { unitInfo_?: { id?: number }[] } | undefined
   if (!unit || !Array.isArray(unit.unitInfo_)) return null
-  const item = (data.item ?? {}) as {
+  const itemRaw = (data.item ?? {}) as {
     characterShards_?: { characterType: number; count: number }[]
     characterPlentyShards_?: { characterType: number; count: number }[]
+    equipItems_?: { equipId?: number; rank?: number; score?: number }[]
+    givenEquipInfo_?: { everGivenIdList?: number[] }
   }
   const zp = new Map<number, number>()
-  for (const s of item.characterShards_ ?? []) zp.set(Number(s.characterType), Number(s.count) || 0)
+  for (const s of itemRaw.characterShards_ ?? []) zp.set(Number(s.characterType), Number(s.count) || 0)
   const plenty = new Map<number, number>()
-  for (const s of item.characterPlentyShards_ ?? []) plenty.set(Number(s.characterType), Number(s.count) || 0)
+  for (const s of itemRaw.characterPlentyShards_ ?? []) plenty.set(Number(s.characterType), Number(s.count) || 0)
 
   const box: Box = {}
   for (const u of unit.unitInfo_) {
@@ -86,7 +96,21 @@ function fromRawSave(data: Record<string, unknown>): BoxState | null {
     if (members.length) parties.push({ name: p.partyName_ ?? `Party${idx + 1}`, active: idx === active, members })
   })
 
-  return { box, parties }
+  const equipment: Record<string, OwnedEquipment> = {}
+  for (const eq of itemRaw.equipItems_ ?? []) {
+    const id = Number(eq.equipId)
+    if (!Number.isFinite(id)) continue
+    const entry = equipment[String(id)] ?? { count: 0, bestRank: null, bestScore: null }
+    entry.count++
+    const rank = Number(eq.rank)
+    const score = Number(eq.score)
+    if (Number.isFinite(rank)) entry.bestRank = entry.bestRank === null ? rank : Math.max(entry.bestRank, rank)
+    if (Number.isFinite(score)) entry.bestScore = entry.bestScore === null ? score : Math.max(entry.bestScore, score)
+    equipment[String(id)] = entry
+  }
+  const everOwned = (itemRaw.givenEquipInfo_?.everGivenIdList ?? []).map(Number).filter(Number.isFinite)
+
+  return { box, parties, equipment, everOwnedEquipment: everOwned }
 }
 
 /** Convierte el JSON de "Mi Caja" de dblegends.net. */
@@ -103,7 +127,7 @@ function fromDblegendsBox(data: Record<string, unknown>): BoxState | null {
       zenkai: v.zenkai ? Math.max(1, Math.min(7, Number(v.zenkaiLvl) || 1)) : 0
     }
   }
-  return found ? { box, parties: [] } : null
+  return found ? { box, equipment: {}, everOwnedEquipment: [], parties: [] } : null
 }
 
 export type ImportKind = 'caja' | 'dblegends' | 'save' | 'desconocido'
@@ -116,12 +140,14 @@ export async function importBoxFile(file: File): Promise<{ state: BoxState; kind
   }
   const data = parsed as Record<string, unknown>
 
-  if (data.format === 'dbl-asistente/caja-v1') {
+  if (data.format === 'dbl-asistente/caja-v1' || data.format === 'dbl-asistente/caja-v2') {
     const caja = data as unknown as CajaFile
     return {
       kind: 'caja',
       state: {
         box: caja.units ?? {},
+        equipment: caja.equipment ?? {},
+        everOwnedEquipment: caja.everOwnedEquipment ?? [],
         parties: caja.parties ?? [],
         playerName: caja.playerName ?? caja.player?.name,
         importedAt: new Date().toISOString()
@@ -140,12 +166,14 @@ export async function importBoxFile(file: File): Promise<{ state: BoxState; kind
 
 export function toCaja(state: BoxState): CajaFile {
   return {
-    format: 'dbl-asistente/caja-v1',
+    format: 'dbl-asistente/caja-v2',
     generatedAt: new Date().toISOString(),
     source: 'web',
     romVersion: '',
     playerName: state.playerName,
     units: state.box,
+    equipment: state.equipment,
+    everOwnedEquipment: state.everOwnedEquipment,
     parties: state.parties
   }
 }
