@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0b0d12;
+  --color-panel: #12151d;
+  --color-panel2: #171b25;
+  --color-line: #232936;
+  --color-gold: #ffc61a;
+  --color-fire: #ff3355;
+  --color-muted: #8b93a7;
+  --color-text: #e6e9f0;
+  --color-red: #ff4d4d;
+  --color-yel: #ffd43b;
+  --color-pur: #b57bff;
+  --color-grn: #4ade80;
+  --color-blu: #4dabff;
+  --color-lgt: #e8ecf1;
+  --color-drk: #8b93a7;
+}
+
+html {
+  color-scheme: dark;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(60rem 30rem at 110% -10%, rgba(255, 198, 26, 0.08), transparent 60%),
+    radial-gradient(40rem 24rem at -10% 0%, rgba(255, 51, 85, 0.07), transparent 60%),
+    var(--color-ink);
+  color: var(--color-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+::selection { background: rgba(255, 198, 26, 0.3); }
+
+.card {
+  background: color-mix(in srgb, var(--color-panel) 92%, transparent);
+  border: 1px solid var(--color-line);
+  border-radius: 1rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--color-line);
+  background: var(--color-panel2);
+  color: var(--color-text);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.05s;
+  white-space: nowrap;
+}
+.btn:hover { border-color: #384155; background: #1c2130; }
+.btn:active { transform: translateY(1px); }
+.btn-gold {
+  background: var(--color-gold);
+  border-color: var(--color-gold);
+  color: #171102;
+}
+.btn-gold:hover { background: #ffd24d; border-color: #ffd24d; }
+.btn-ghost { background: transparent; }
+.btn-sm { padding: 0.3rem 0.55rem; font-size: 0.75rem; border-radius: 0.55rem; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-line);
+  background: var(--color-panel2);
+  color: var(--color-text);
+  padding: 0.18rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.chip-muted { color: var(--color-muted); }
+.chip-gold { border-color: rgba(255, 198, 26, 0.4); color: var(--color-gold); background: rgba(255, 198, 26, 0.08); }
+.chip-fire { border-color: rgba(255, 51, 85, 0.45); color: #ff7d94; background: rgba(255, 51, 85, 0.08); }
+.chip-green { border-color: rgba(74, 222, 128, 0.4); color: #7ce7a1; background: rgba(74, 222, 128, 0.08); }
+
+.el-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  flex: none;
+}
+
+.tab {
+  border: 1px solid transparent;
+  border-radius: 0.7rem;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-muted);
+  cursor: pointer;
+  background: transparent;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--color-text); background: var(--color-panel2); }
+.tab[aria-current="page"] {
+  color: #171102;
+  background: var(--color-gold);
+  border-color: var(--color-gold);
+}
+
+.unit-card {
+  border: 1px solid var(--color-line);
+  border-radius: 0.8rem;
+  background: var(--color-panel);
+  padding: 0.55rem 0.6rem;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  transition: border-color 0.12s, background 0.12s;
+}
+.unit-card:hover { border-color: #3a4358; }
+.unit-card[data-owned="true"] {
+  border-color: rgba(255, 198, 26, 0.45);
+  background: linear-gradient(180deg, rgba(255, 198, 26, 0.09), rgba(255, 198, 26, 0.02));
+}
+
+input[type="search"], input[type="text"], select {
+  background: var(--color-panel2);
+  border: 1px solid var(--color-line);
+  color: var(--color-text);
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.88rem;
+  outline: none;
+  width: 100%;
+}
+input:focus, select:focus { border-color: var(--color-gold); }
+
+.mono { font-variant-numeric: tabular-nums; }
+
+.scroll-x { overflow-x: auto; scrollbar-width: thin; }
+
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
