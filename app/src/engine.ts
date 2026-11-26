@@ -11,6 +11,7 @@ import type {
   OwnedEquipment,
   OwnedUnit,
   Rarity,
+  RequirementAtom,
   SavedParty,
   TagInfo
 } from './types'
@@ -420,7 +421,32 @@ function normalizeText(value: string): string {
     .trim()
 }
 
+function requirementAtomMatches(atom: RequirementAtom, character: Character): boolean {
+  switch (atom.kind) {
+    case 'card':
+      return character.card.toLowerCase() === String(atom.value).toLowerCase()
+    case 'element':
+      return character.element === atom.value
+    case 'rarity':
+      return character.rarity === atom.value
+    case 'tag':
+      return character.tags.includes(Number(atom.value))
+    case 'name':
+      return normalizeText(character.name) === normalizeText(String(atom.value))
+    default:
+      return false
+  }
+}
+
 export function equipmentUsableBy(equip: Equipment, character: Character): boolean {
+  if (equip.requirements) {
+    if (!equip.requirements.any.length) return true
+    return equip.requirements.any.some((clause) =>
+      clause.all.every((atom) => requirementAtomMatches(atom, character))
+    )
+  }
+
+  // Compatibilidad con datos anteriores sin requisitos estructurados
   if (!equip.conditions.length) return true
   const name = normalizeText(character.name)
   const card = character.card.toLowerCase()

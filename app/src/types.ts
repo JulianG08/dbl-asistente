@@ -184,6 +184,15 @@ export interface EquipmentObtain {
   note: string
 }
 
+export interface RequirementAtom {
+  kind: 'card' | 'element' | 'rarity' | 'tag' | 'name' | 'unknown'
+  value: string | number
+}
+
+export interface EquipmentRequirements {
+  any: { all: RequirementAtom[] }[]
+}
+
 export interface Equipment {
   id: number
   name: string
@@ -197,6 +206,7 @@ export interface Equipment {
   release: number
   desc?: string
   equippable?: string
+  requirements?: EquipmentRequirements
   slots?: EquipmentSlot[]
   obtain?: EquipmentObtain[]
 }

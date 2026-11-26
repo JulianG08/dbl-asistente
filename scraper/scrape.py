@@ -353,6 +353,88 @@ def scrape_banner_detail(client: Client, banner_id: int) -> dict[str, Any]:
 EQUIP_RARITY = {5: "Platinum", 4: "Unique", 3: "Gold", 2: "Silver", 1: "Bronze", 0: "Iron", 6: "Event"}
 EFFECT_RE = re.compile(r"^(.*?)\s*([+-]?\d+(?:[.,]\d+)?)%\s*(?:[~-]\s*(\d+(?:[.,]\d+)?)%)?\s*(.*)$")
 
+ELEMENT_CODES = {
+    "AZU": "BLU",
+    "ROJ": "RED",
+    "VER": "GRN",
+    "MOR": "PUR",
+    "AMA": "YEL",
+    "CLA": "LGT",
+    "OSC": "DRK",
+    "RED": "RED",
+    "YEL": "YEL",
+    "PUR": "PUR",
+    "GRN": "GRN",
+    "BLU": "BLU",
+    "LGT": "LGT",
+    "DRK": "DRK",
+}
+
+RARITY_CODES = {
+    "HERO": "HERO",
+    "HE": "HERO",
+    "EXTREME": "EXTREME",
+    "EX": "EXTREME",
+    "SPARKING": "SPARKING",
+    "SP": "SPARKING",
+    "ULTRA": "ULTRA",
+    "UL": "ULTRA",
+    "LEGEND": "LEGEND",
+    "LEG": "LEGEND",
+}
+
+
+def resolve_requirement_atom(
+    atom: str,
+    tag_lookup: dict[str, int],
+    known_names: set[str],
+    unknown: list[str],
+) -> dict[str, Any]:
+    if re.match(r"^DBL[A-Z0-9-]+$", atom, re.I):
+        return {"kind": "card", "value": atom.upper()}
+    upper = atom.upper()
+    if upper in ELEMENT_CODES:
+        return {"kind": "element", "value": ELEMENT_CODES[upper]}
+    if upper in RARITY_CODES:
+        return {"kind": "rarity", "value": RARITY_CODES[upper]}
+    tag_id = tag_lookup.get(norm_key(atom))
+    if tag_id is not None:
+        return {"kind": "tag", "value": tag_id}
+    if not known_names or norm_key(atom) in known_names:
+        return {"kind": "name", "value": atom}
+    unknown.append(atom)
+    return {"kind": "unknown", "value": atom}
+
+
+def parse_equipment_requirements(
+    text: str,
+    tag_lookup: dict[str, int],
+    known_names: set[str],
+    unknown: list[str],
+) -> dict[str, Any]:
+    """Convierte 'Equippable A + B or C' en {any: [{all: [átomos]}, ...]}.
+
+    `or` separa alternativas (OR) y `+` exige todos los átomos (AND).
+    """
+    raw = re.sub(r"^Equippable\s*", "", (text or "").strip(), flags=re.I).strip()
+    if not raw or re.match(r"^By any character$", raw, re.I):
+        return {"any": []}
+
+    clauses: list[dict[str, Any]] = []
+    for clause in re.split(r"\s+or\s+", raw):
+        atoms = []
+        for part in clause.split("+"):
+            atom = part.strip(" .;")
+            if not atom:
+                continue
+            atoms.append(resolve_requirement_atom(atom, tag_lookup, known_names, unknown))
+        if atoms:
+            clauses.append({"all": atoms})
+    return {"any": clauses}
+
+
+
+
 MECHANIC_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("Cambio Protector", re.compile(r"cambio protector", re.I)),
     ("Resurrección", re.compile(r"resurrecci[oó]n", re.I)),
@@ -565,12 +647,27 @@ def scrape_equipment(
     cache_dir: Path | None = None,
     skip_details: bool = False,
     refresh: bool = False,
+    out_dir: Path | None = None,
 ) -> dict[str, Any]:
     log("equipamiento: descargando listado")
     doc = client.doc("/equipment")
     blob = json_blob(doc, "eqdata")
     conds: dict[str, str] = {str(k): v for k, v in (blob.get("conds") or {}).items()}
     rows: list[list[Any]] = blob.get("items") or []
+
+    tag_lookup: dict[str, int] = {}
+    known_names: set[str] = set()
+    chars_file = (out_dir / "characters.json") if out_dir else None
+    if chars_file and chars_file.exists():
+        try:
+            chars_data = json.loads(chars_file.read_text(encoding="utf-8"))
+            for key in ("tags", "episodes", "traits"):
+                for entry in chars_data.get(key) or []:
+                    tag_lookup[norm_key(entry.get("name", ""))] = int(entry["id"])
+            known_names = {norm_key(c.get("name", "")) for c in chars_data.get("characters") or []}
+            log(f"equipamiento: {len(tag_lookup)} tags y {len(known_names)} nombres para requisitos")
+        except Exception as exc:  # pragma: no cover
+            log(f"aviso: no se pudieron leer nombres para requisitos: {exc}")
 
     cards: dict[int, dict[str, Any]] = {}
     for a in doc.xpath('//a[contains(@class,"eqc")]'):
@@ -655,6 +752,15 @@ def scrape_equipment(
                     item.update(parse_equipment_detail(client, item["id"], cache_dir))
                 except Exception as exc:  # pragma: no cover
                     log(f"aviso: sin detalle para equip {item['id']}: {exc}")
+
+    unknown_atoms: list[str] = []
+    for item in items:
+        text = item.get("equippable") or ""
+        if text:
+            item["requirements"] = parse_equipment_requirements(text, tag_lookup, known_names, unknown_atoms)
+    if unknown_atoms:
+        unique = sorted(set(unknown_atoms))
+        log(f"aviso: {len(unique)} átomos de requisito no reconocidos: {unique[:10]}")
 
     if img_dir is not None:
         stats: dict[str, int] = {}
@@ -836,6 +942,7 @@ def main() -> None:
             cache_dir=cache_dir,
             skip_details=args.skip_details,
             refresh=args.refresh_equipment,
+            out_dir=out,
         )
         (out / "equipment.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         log(f"equipamiento: {data['count']} guardados")

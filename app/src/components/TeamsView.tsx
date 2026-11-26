@@ -522,6 +522,8 @@ function EquipRow({
   const highlights = equipmentHighlights(equip, character, context, mode)
   const obtain = equip.obtain?.[0]
   const tooltip = highlights.slots.join(' | ')
+  const requirement = (equip.equippable ?? '').replace(/^Equippable\s*/i, '').trim()
+  const hasRequirement = (equip.requirements?.any?.length ?? equip.conditions.length) > 0
 
   return (
     <div class="flex items-start gap-2">
@@ -547,6 +549,11 @@ function EquipRow({
         {highlights.secondary ? (
           <p class="text-[0.6rem] text-muted truncate" title={tooltip}>
             {highlights.secondary}
+          </p>
+        ) : null}
+        {hasRequirement && requirement ? (
+          <p class="text-[0.58rem] text-muted italic truncate" title={requirement}>
+            Requiere: {requirement}
           </p>
         ) : null}
         <p class={`text-[0.6rem] ${owned ? 'text-gold' : 'text-muted'}`}>

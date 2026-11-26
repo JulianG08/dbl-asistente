@@ -218,6 +218,68 @@ describe('equipamiento', () => {
   })
 })
 
+describe('requisitos de equipamiento', () => {
+  const base: Equipment = {
+    id: 30,
+    name: 'Equip de requisitos',
+    rarity: 3,
+    rarityLabel: 'Gold',
+    icon: '',
+    conditions: [],
+    conditionLabels: [],
+    exclusive: false,
+    awakenedFrom: 0,
+    release: 0,
+    slots: [],
+    obtain: [],
+    requirements: { any: [] }
+  }
+
+  it('exige nombre y carta a la vez (AND)', () => {
+    const equip: Equipment = {
+      ...base,
+      requirements: {
+        any: [{ all: [{ kind: 'name', value: 'Goku' }, { kind: 'card', value: 'DBL45-01U' }] }]
+      }
+    }
+    const otroGoku = { ...makeChar(1, [1]), name: 'Goku', card: 'DBL01-02E' }
+    const gokuExacto = { ...makeChar(2, [1]), name: 'Goku', card: 'DBL45-01U' }
+    expect(equipmentUsableBy(equip, otroGoku)).toBe(false)
+    expect(equipmentUsableBy(equip, gokuExacto)).toBe(true)
+  })
+
+  it('acepta cualquiera de las alternativas (OR)', () => {
+    const equip: Equipment = {
+      ...base,
+      requirements: { any: [{ all: [{ kind: 'tag', value: 1 }] }, { all: [{ kind: 'tag', value: 2 }] }] }
+    }
+    expect(equipmentUsableBy(equip, makeChar(1, [1]))).toBe(true)
+    expect(equipmentUsableBy(equip, makeChar(2, [2]))).toBe(true)
+    expect(equipmentUsableBy(equip, makeChar(3, [3]))).toBe(false)
+  })
+
+  it('exige episodio y elemento a la vez', () => {
+    const equip: Equipment = {
+      ...base,
+      requirements: { any: [{ all: [{ kind: 'tag', value: 20015 }, { kind: 'element', value: 'BLU' }] }] }
+    }
+    expect(equipmentUsableBy(equip, makeChar(1, [20015], 'SPARKING', 'BLU'))).toBe(true)
+    expect(equipmentUsableBy(equip, makeChar(2, [20015], 'SPARKING', 'RED'))).toBe(false)
+    expect(equipmentUsableBy(equip, makeChar(3, [1], 'SPARKING', 'BLU'))).toBe(false)
+  })
+
+  it('soporta requisitos por rareza', () => {
+    const equip: Equipment = { ...base, requirements: { any: [{ all: [{ kind: 'rarity', value: 'HERO' }] }] } }
+    expect(equipmentUsableBy(equip, makeChar(1, [1], 'HERO'))).toBe(true)
+    expect(equipmentUsableBy(equip, makeChar(2, [1], 'SPARKING'))).toBe(false)
+  })
+
+  it('excluye si hay un requisito desconocido', () => {
+    const equip: Equipment = { ...base, requirements: { any: [{ all: [{ kind: 'unknown', value: 'XYZ' }] }] } }
+    expect(equipmentUsableBy(equip, makeChar(1, [1]))).toBe(false)
+  })
+})
+
 describe('completeTeam', () => {
   it('completa el equipo con personajes que comparten tag', () => {
     const characters = Array.from({ length: 8 }, (_, i) => makeChar(i + 1, [1]))
