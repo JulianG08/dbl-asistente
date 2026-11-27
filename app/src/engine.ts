@@ -642,12 +642,22 @@ type CondAtom =
   | { kind: 'unknown'; value: string; label: string }
 
 const CONDITION_PREFIX_RE =
-  /^(?:tanto\s+)?(?:de\s+)?(?:la\s+)?(?:del\s+)?(?:etiqueta\s+|episodio\s+|estilo de lucha tipo\s+|rareza\s+)/i
+  /^(?:tanto\s+|del\s+|de\s+|la\s+|las\s+|el\s+|los\s+|etiquetas?\s+|episodios?\s+|estilo de lucha tipo\s+|rareza\s+)/i
 const RARITY_VALUES = new Set(['HERO', 'EXTREME', 'SPARKING', 'ULTRA', 'LEGEND'])
 
+function stripConditionPrefixes(value: string): string {
+  let out = value.replace(/\(sin contarte\)/gi, '').trim()
+  let changed = true
+  while (changed) {
+    const before = out
+    out = out.replace(CONDITION_PREFIX_RE, '').trim()
+    changed = out !== before
+  }
+  return out
+}
+
 function parseCondAtom(fragment: string, lookup: Map<string, number>): CondAtom {
-  let value = fragment.replace(/\(sin contarte\)/gi, '').trim()
-  value = value.replace(CONDITION_PREFIX_RE, '').replace(/^del\s+/i, '').trim()
+  const value = stripConditionPrefixes(fragment)
   if (!value) return { kind: 'unknown', value: fragment, label: fragment }
   const upper = value.toUpperCase()
   if (RARITY_VALUES.has(upper)) return { kind: 'rarity', value: upper, label: value }
@@ -700,7 +710,7 @@ function evaluateCondition(
     return { applies, multiplier: 1, detail: `${first.label} + ${second.label}` }
   }
 
-  const minMatch = text.match(/^si hay (\d+)(?: o más)? luchadores de (.+)$/i)
+  const minMatch = text.match(/^si hay (\d+)(?: o más)? luchadores (?:de|del) (.+)$/i)
   if (minMatch) {
     const needed = Number(minMatch[1])
     const atoms = condAtoms(minMatch[2], lookup)
@@ -713,14 +723,15 @@ function evaluateCondition(
   }
 
   const anyMatch =
-    text.match(/^si hay algún luchador de (.+)$/i) || text.match(/^para (?:aliados|tu equipo) de (.+)$/i)
+    text.match(/^si hay algún luchador (?:de|del) (.+)$/i) ||
+    text.match(/^para (?:aliados|tu equipo) (?:de|del) (.+)$/i)
   if (anyMatch) {
     const atoms = condAtoms(anyMatch[1], lookup)
     const count = countCarriers(atoms, members)
     return { applies: count > 0, multiplier: 1, detail: atoms.map((a) => a.label).join(' o ') }
   }
 
-  const scaleMatch = text.match(/^por cada luchador de (.+)$/i)
+  const scaleMatch = text.match(/^por cada luchador (?:de|del) (.+)$/i)
   if (scaleMatch) {
     const atoms = condAtoms(scaleMatch[1], lookup)
     const count = countCarriers(atoms, members)

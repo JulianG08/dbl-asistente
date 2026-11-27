@@ -695,3 +695,53 @@ describe('condicionales compuestos y ranuras', () => {
     expect(slots[1].effects[0].applies).toBe(true)
   })
 })
+
+describe('condicionales con "del episodio" y etiquetas plurales', () => {
+  const mk = (id: number, text: string): Equipment => ({
+    id,
+    name: `Equip ${id}`,
+    rarity: 3,
+    rarityLabel: 'Gold',
+    icon: '',
+    conditions: [],
+    conditionLabels: [],
+    exclusive: false,
+    awakenedFrom: 0,
+    release: 0,
+    slots: [{ n: 1, options: [text] }],
+    obtain: []
+  })
+  const scored = (character: Character) => ({ character, owned: { stars: 14, zenkai: 0 }, score: 1 })
+
+  it('aplica "si hay algún luchador del episodio X"', () => {
+    const lookup = new Map([['dragon ball xenoverse 2', 20024]])
+    const equip = mk(
+      110,
+      'Ataque y defensa de energía propias 5.00% ~ 12.00% si hay algún luchador del episodio DRAGON BALL XENOVERSE 2'
+    )
+    const unit = makeChar(1, [7])
+    const xeno = makeChar(2, [20024])
+    const sin = buildTeamContext([scored(unit)])
+    const con = buildTeamContext([scored(unit), scored(xeno)])
+    expect(equipmentScore(equip, unit, 'core', 'attack', con, lookup)).toBeGreaterThan(
+      equipmentScore(equip, unit, 'core', 'attack', sin, lookup)
+    )
+  })
+
+  it('escala con "etiquetas X o episodio Y"', () => {
+    const lookup = new Map([
+      ['ki divino', 20],
+      ['dragon ball xenoverse 2', 20024]
+    ])
+    const equip = mk(
+      111,
+      'Defensa física y de energía propias 3.00% ~ 5.00% por cada luchador de etiquetas Ki Divino o episodio DRAGON BALL XENOVERSE 2'
+    )
+    const unit = makeChar(1, [7])
+    const uno = buildTeamContext([scored(unit), scored(makeChar(2, [20]))])
+    const dos = buildTeamContext([scored(unit), scored(makeChar(2, [20])), scored(makeChar(3, [20024]))])
+    expect(equipmentScore(equip, unit, 'core', 'attack', dos, lookup)).toBeGreaterThan(
+      equipmentScore(equip, unit, 'core', 'attack', uno, lookup)
+    )
+  })
+})
