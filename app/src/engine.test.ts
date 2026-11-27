@@ -5,6 +5,7 @@ import {
   buildTeamContext,
   completeTeam,
   equipmentScore,
+  equipmentSlots,
   equipmentUsableBy,
   improveTeam,
   metaCoverage,
@@ -618,5 +619,79 @@ describe('lista única de equipamiento (top)', () => {
     expect(rec.top.map((pick) => pick.equip.id)).toEqual([1, 2, 3, 4])
     expect(rec.top[0].owned).toBeNull()
     expect(rec.top[1].owned).not.toBeNull()
+  })
+})
+
+describe('condicionales compuestos y ranuras', () => {
+  const mk = (id: number, text: string): Equipment => ({
+    id,
+    name: `Equip ${id}`,
+    rarity: 3,
+    rarityLabel: 'Gold',
+    icon: '',
+    conditions: [],
+    conditionLabels: [],
+    exclusive: false,
+    awakenedFrom: 0,
+    release: 0,
+    slots: [{ n: 1, options: [text] }],
+    obtain: []
+  })
+  const scored = (character: Character) => ({ character, owned: { stars: 14, zenkai: 0 }, score: 1 })
+
+  it('AND: exige episodio y etiqueta en el mismo luchador', () => {
+    const lookup = new Map([
+      ['arco de dragon ball', 20000],
+      ['saiyajin', 7]
+    ])
+    const texto =
+      'Ataque físico propio 5.00% ~ 15.00% si hay algún luchador que sea tanto del episodio Arco de Dragon Ball como de etiqueta Saiyajin'
+    const equip = mk(100, texto)
+    const base = makeChar(1, [7])
+    const conEpisodio = { ...makeChar(1, [7, 20000]) }
+    const sin = buildTeamContext([scored(base), scored(makeChar(2, [7]))])
+    const con = buildTeamContext([scored(conEpisodio), scored(makeChar(2, [7]))])
+    expect(equipmentScore(equip, base, 'core', 'attack', con, lookup)).toBeGreaterThan(
+      equipmentScore(equip, base, 'core', 'attack', sin, lookup)
+    )
+  })
+
+  it('mínimo N: si hay 2 o más luchadores de etiqueta Futuro', () => {
+    const lookup = new Map([['futuro', 26]])
+    const equip = mk(101, 'Ataque de energía propio 5.00% ~ 10.00% si hay 2 o más luchadores de etiqueta Futuro')
+    const unit = makeChar(1, [26])
+    const uno = buildTeamContext([scored(unit), scored(makeChar(2, [1]))])
+    const dos = buildTeamContext([scored(unit), scored(makeChar(2, [26]))])
+    expect(equipmentScore(equip, unit, 'core', 'attack', dos, lookup)).toBeGreaterThan(
+      equipmentScore(equip, unit, 'core', 'attack', uno, lookup)
+    )
+  })
+
+  it('un condicional que no aplica no suma', () => {
+    const lookup = new Map([['futuro', 26]])
+    const equip = mk(102, 'Ataque físico propio 5.00% ~ 15.00% si hay algún luchador de etiqueta Futuro')
+    const unit = makeChar(1, [1])
+    const ctx = buildTeamContext([scored(unit)])
+    expect(equipmentScore(equip, unit, 'core', 'attack', ctx, lookup)).toBe(
+      equipmentScore(equip, unit, 'core', 'attack')
+    )
+  })
+
+  it('equipmentSlots devuelve las 3 ranuras y marca aplicabilidad', () => {
+    const lookup = new Map([['saiyajin', 7]])
+    const equip: Equipment = {
+      ...mk(103, 'Salud básica +10.00%'),
+      slots: [
+        { n: 1, options: ['Salud básica +10.00%'] },
+        { n: 2, options: ['Ataque físico propio 5.00% ~ 15.00% si hay algún luchador de etiqueta Saiyajin'] },
+        { n: 3, options: ['Defensa física básica +10.00%'] }
+      ]
+    }
+    const unit = makeChar(1, [7])
+    const ctx = buildTeamContext([scored(unit)])
+    const slots = equipmentSlots(equip, unit, 'core', 'attack', ctx, lookup)
+    expect(slots).toHaveLength(3)
+    expect(slots[1].effects[0].conditional).toBe(true)
+    expect(slots[1].effects[0].applies).toBe(true)
   })
 })

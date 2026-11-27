@@ -15,11 +15,10 @@ import {
   buildTeamContext,
   completeTeam,
   ELEMENT_LABEL,
-  equipmentHighlights,
+  equipmentSlots,
   improveTeam,
   recommendEquipment,
   ROLE_LABEL,
-  teamConditionalHint,
   teamEquipment
 } from '../engine'
 import { CharAvatar, ElementDot, RarityChip, Section, UnitLine, equipIconUrl } from './ui'
@@ -364,7 +363,7 @@ function TeamCard({
 
       <details class="rounded-xl border border-line bg-panel2/40 p-3" open={openEquipment ? true : undefined}>
         <summary class="text-xs font-bold text-muted uppercase tracking-widest">
-          Equipamiento recomendado (lo tuyo + lo mejor)
+          Equipamiento: los 6 mejores para este equipo
         </summary>
         <p class="text-[0.62rem] text-muted mt-1">
           El banquillo no entra en combate: sólo aporta su Habilidad Z, no necesita equipamiento.
@@ -609,10 +608,8 @@ function EquipRow({
   tagLookup?: Map<string, number>
 }) {
   const equip = pick.equip
-  const highlights = equipmentHighlights(equip, character, context, mode, teamContext, tagLookup)
-  const teamHint = teamConditionalHint(equip, teamContext, tagLookup)
+  const slots = equipmentSlots(equip, character, context, mode, teamContext, tagLookup)
   const obtain = equip.obtain?.[0]
-  const tooltip = highlights.slots.join(' | ')
   const requirement = (equip.equippable ?? '').replace(/^Equippable\s*/i, '').trim()
   const hasRequirement = (equip.requirements?.any?.length ?? equip.conditions.length) > 0
 
@@ -631,22 +628,29 @@ function EquipRow({
         <div class="flex items-center gap-1 min-w-0">
           <span class="text-[0.72rem] truncate">{equip.name}</span>
           <span class="chip chip-muted">{equip.rarityLabel}</span>
-          {teamHint ? (
-            <span class="chip chip-gold" title="Se aprovecha del equipo actual">
-              {teamHint}
-            </span>
-          ) : null}
         </div>
-        {highlights.primary ? (
-          <p class="text-[0.62rem] text-text truncate" title={tooltip}>
-            {highlights.primary}
-          </p>
-        ) : null}
-        {highlights.secondary ? (
-          <p class="text-[0.6rem] text-muted truncate" title={tooltip}>
-            {highlights.secondary}
-          </p>
-        ) : null}
+        {slots.map((slot) => (
+          <div class="space-y-0.5 mt-0.5" key={slot.n}>
+            {slot.effects.map((effect, index) => {
+              const range =
+                effect.min && effect.min !== effect.max
+                  ? `${effect.min}–${effect.max}%`
+                  : `+${effect.max}%`
+              return (
+                <p class="text-[0.6rem] leading-snug" key={index}>
+                  <span class={effect.conditional && !effect.applies ? 'text-muted line-through' : 'text-text/90'}>
+                    {effect.name} {range}
+                  </span>
+                  {effect.conditional ? (
+                    <span class={effect.applies ? 'chip chip-gold ml-1' : 'chip ml-1'}>
+                      {effect.applies ? `✓ ${effect.detail}` : 'no aplica'}
+                    </span>
+                  ) : null}
+                </p>
+              )
+            })}
+          </div>
+        ))}
         {hasRequirement && requirement ? (
           <p class="text-[0.58rem] text-muted italic truncate" title={requirement}>
             Requiere: {requirement}

@@ -548,8 +548,27 @@ function effectWeight(name: string, role: EquipRole, context: EquipContext, mode
   return 0.35
 }
 
+export interface SlotEffect {
+  name: string
+  min: number
+  max: number
+  conditional: boolean
+  applies: boolean
+  detail: string
+  effective: number
+  multiplier: number
+}
+
+export interface SlotInfo {
+  n: number
+  text: string
+  effects: SlotEffect[]
+  score: number
+}
+
 function slotScore(
   text: string,
+  character: Character,
   role: EquipRole,
   context: EquipContext,
   mode: EquipMode,
@@ -557,15 +576,16 @@ function slotScore(
   tagLookup?: Map<string, number>
 ): number {
   let total = 0
-  for (const effect of parseEffects(text)) {
-    if (effect.max === 0) {
-      total += context === 'core' ? 0.8 : 0.6
-      continue
+  for (const segment of text.split('|')) {
+    const trimmed = segment.trim()
+    if (!trimmed) continue
+    for (const effect of parseSegmentEffects(trimmed, teamContext, tagLookup, character)) {
+      if (effect.max === 0 && !effect.conditional) {
+        total += context === 'core' ? 0.8 : 0.6
+        continue
+      }
+      total += effect.effective * effectWeight(effect.name, role, context, mode)
     }
-    total += Math.min(effect.max, 120) * effectWeight(effect.name, role, context, mode)
-  }
-  if (teamContext && tagLookup) {
-    total += teamConditionalValue(text, teamContext, tagLookup) * (context === 'core' ? 1 : 0.8)
   }
   return total
 }
@@ -573,6 +593,7 @@ function slotScore(
 export interface TeamContext {
   count: number
   tagCounts: Map<number, number>
+  characters: Character[]
 }
 
 export function buildTeamContext(units: ScoredUnit[]): TeamContext {
@@ -582,7 +603,7 @@ export function buildTeamContext(units: ScoredUnit[]): TeamContext {
       tagCounts.set(tagId, (tagCounts.get(tagId) ?? 0) + 1)
     }
   }
-  return { count: units.length, tagCounts }
+  return { count: units.length, tagCounts, characters: units.map((unit) => unit.character) }
 }
 
 export function buildTagLookup(tags: TagInfo[]): Map<string, number> {
@@ -614,28 +635,190 @@ function resolveTagName(fragment: string, lookup: Map<string, number>): number |
   return id
 }
 
-const SCALE_CONDITIONAL_RE =
-  /([\d.]+)%\s*(?:[~-]\s*([\d.]+)\s*%)?\s*por cada luchador de (?:etiqueta|estilo de lucha tipo) ([^.,;]+)/gi
-const FLAT_CONDITIONAL_RE =
-  /([\d.]+)%\s*(?:si hay algún luchador de (?:etiqueta|estilo de lucha tipo)|para aliados de etiqueta|para tu equipo de etiqueta)\s*([^.,;()]+)(\s*\(sin contarte\))?/gi
+type CondAtom =
+  | { kind: 'tag'; id: number; label: string }
+  | { kind: 'rarity'; value: string; label: string }
+  | { kind: 'name'; value: string; label: string }
+  | { kind: 'unknown'; value: string; label: string }
 
-/** Efectos condicionales: "X% por cada luchador de etiqueta Y" o "X% si hay algún luchador de etiqueta Y". */
-function teamConditionalValue(text: string, ctx: TeamContext, lookup: Map<string, number>): number {
-  let total = 0
-  for (const match of text.matchAll(SCALE_CONDITIONAL_RE)) {
-    const value = Number(match[2] ?? match[1])
-    const id = resolveTagName(match[3], lookup)
-    if (id !== undefined) total += value * Math.min(ctx.tagCounts.get(id) ?? 0, ctx.count)
+const CONDITION_PREFIX_RE =
+  /^(?:tanto\s+)?(?:de\s+)?(?:la\s+)?(?:del\s+)?(?:etiqueta\s+|episodio\s+|estilo de lucha tipo\s+|rareza\s+)/i
+const RARITY_VALUES = new Set(['HERO', 'EXTREME', 'SPARKING', 'ULTRA', 'LEGEND'])
+
+function parseCondAtom(fragment: string, lookup: Map<string, number>): CondAtom {
+  let value = fragment.replace(/\(sin contarte\)/gi, '').trim()
+  value = value.replace(CONDITION_PREFIX_RE, '').replace(/^del\s+/i, '').trim()
+  if (!value) return { kind: 'unknown', value: fragment, label: fragment }
+  const upper = value.toUpperCase()
+  if (RARITY_VALUES.has(upper)) return { kind: 'rarity', value: upper, label: value }
+  const tagId = resolveTagName(value, lookup)
+  if (tagId !== undefined) return { kind: 'tag', id: tagId, label: value }
+  return { kind: 'name', value, label: value }
+}
+
+function condAtomMatches(atom: CondAtom, member: Character): boolean {
+  if (atom.kind === 'tag') return member.tags.includes(atom.id)
+  if (atom.kind === 'rarity') return member.rarity === atom.value
+  if (atom.kind === 'name') {
+    const name = normalizeText(member.name)
+    const target = normalizeText(atom.value)
+    return name === target || name.includes(target)
   }
-  for (const match of text.matchAll(FLAT_CONDITIONAL_RE)) {
-    const value = Number(match[1])
-    const id = resolveTagName(match[2], lookup)
-    if (id === undefined) continue
-    const excludesSelf = Boolean(match[3])
-    const carriers = ctx.tagCounts.get(id) ?? 0
-    if (carriers > (excludesSelf ? 1 : 0)) total += value
+  return false
+}
+
+function condAtoms(fragment: string, lookup: Map<string, number>): CondAtom[] {
+  return fragment.split(/\s+o\s+/i).map((part) => parseCondAtom(part, lookup))
+}
+
+function countCarriers(atoms: CondAtom[], members: Character[]): number {
+  return members.filter((member) => atoms.some((atom) => condAtomMatches(atom, member))).length
+}
+
+interface ConditionResult {
+  applies: boolean
+  multiplier: number
+  detail: string
+}
+
+function evaluateCondition(
+  cond: string,
+  ctx: TeamContext,
+  lookup: Map<string, number>,
+  holder: Character
+): ConditionResult {
+  const raw = cond.trim()
+  const excludesSelf = /sin contarte/i.test(raw)
+  const text = raw.replace(/\s*\(sin contarte\)/i, '').trim()
+  const members = excludesSelf ? ctx.characters.filter((c) => c.id !== holder.id) : ctx.characters
+
+  const andMatch = text.match(/^si hay algún luchador que sea tanto (.+?) como (.+)$/i)
+  if (andMatch) {
+    const first = parseCondAtom(andMatch[1], lookup)
+    const second = parseCondAtom(andMatch[2], lookup)
+    const applies = members.some((member) => condAtomMatches(first, member) && condAtomMatches(second, member))
+    return { applies, multiplier: 1, detail: `${first.label} + ${second.label}` }
   }
-  return total
+
+  const minMatch = text.match(/^si hay (\d+)(?: o más)? luchadores de (.+)$/i)
+  if (minMatch) {
+    const needed = Number(minMatch[1])
+    const atoms = condAtoms(minMatch[2], lookup)
+    const count = countCarriers(atoms, members)
+    return {
+      applies: count >= needed,
+      multiplier: 1,
+      detail: `${atoms.map((a) => a.label).join(' o ')} (${count}/${needed})`
+    }
+  }
+
+  const anyMatch =
+    text.match(/^si hay algún luchador de (.+)$/i) || text.match(/^para (?:aliados|tu equipo) de (.+)$/i)
+  if (anyMatch) {
+    const atoms = condAtoms(anyMatch[1], lookup)
+    const count = countCarriers(atoms, members)
+    return { applies: count > 0, multiplier: 1, detail: atoms.map((a) => a.label).join(' o ') }
+  }
+
+  const scaleMatch = text.match(/^por cada luchador de (.+)$/i)
+  if (scaleMatch) {
+    const atoms = condAtoms(scaleMatch[1], lookup)
+    const count = countCarriers(atoms, members)
+    return {
+      applies: count > 0,
+      multiplier: Math.max(count, 1),
+      detail: `×${count} ${atoms.map((a) => a.label).join(' o ')}`
+    }
+  }
+
+  if (/^por cada miembro/i.test(text)) {
+    return { applies: false, multiplier: 1, detail: 'requiere varias copias' }
+  }
+
+  return { applies: false, multiplier: 1, detail: text.slice(0, 60) }
+}
+
+const CONDITION_START_RE = /(por cada luchador|por cada miembro|si hay |para aliados|para tu equipo)/i
+
+function parseSegmentEffects(
+  segment: string,
+  ctx: TeamContext | undefined,
+  lookup: Map<string, number> | undefined,
+  holder: Character
+): SlotEffect[] {
+  const conditionIndex = segment.search(CONDITION_START_RE)
+  if (conditionIndex >= 0) {
+    const prefix = segment.slice(0, conditionIndex).trim()
+    const condition = segment.slice(conditionIndex).trim()
+    const prefixEffects = parseEffects(prefix)
+    if (!prefixEffects.length) return []
+    const last = prefixEffects[prefixEffects.length - 1]
+    const result =
+      ctx && lookup
+        ? evaluateCondition(condition, ctx, lookup, holder)
+        : { applies: false, multiplier: 1, detail: condition.slice(0, 60) }
+    const effects: SlotEffect[] = prefixEffects.slice(0, -1).map((effect) => ({
+      name: effect.name,
+      min: effect.min,
+      max: effect.max,
+      conditional: false,
+      applies: true,
+      detail: '',
+      effective: Math.min(effect.max, 120),
+      multiplier: 1
+    }))
+    effects.push({
+      name: last.name,
+      min: last.min,
+      max: last.max,
+      conditional: true,
+      applies: result.applies,
+      detail: result.detail,
+      effective: result.applies ? Math.min(last.max, 120) * result.multiplier : 0,
+      multiplier: result.multiplier
+    })
+    return effects
+  }
+
+  return parseEffects(segment).map((effect) => ({
+    name: effect.name,
+    min: effect.min,
+    max: effect.max,
+    conditional: false,
+    applies: true,
+    detail: '',
+    effective: Math.min(effect.max, 120),
+    multiplier: 1
+  }))
+}
+
+export function equipmentSlots(
+  equip: Equipment,
+  character: Character,
+  context: EquipContext = 'core',
+  mode: EquipMode = 'attack',
+  teamContext?: TeamContext,
+  tagLookup?: Map<string, number>
+): SlotInfo[] {
+  const role = equipRole(character)
+  return (equip.slots ?? []).map((slot) => {
+    let bestText = ''
+    let bestEffects: SlotEffect[] = []
+    let bestScore = -1
+    for (const option of slot.options) {
+      const score = slotScore(option, character, role, context, mode, teamContext, tagLookup)
+      if (score > bestScore) {
+        bestScore = score
+        bestText = option
+        bestEffects = option
+          .split('|')
+          .map((segment) => segment.trim())
+          .filter(Boolean)
+          .flatMap((segment) => parseSegmentEffects(segment, teamContext, tagLookup, character))
+      }
+    }
+    return { n: slot.n, text: bestText, effects: bestEffects, score: Math.max(0, bestScore) }
+  })
 }
 
 export function equipmentScore(
@@ -646,38 +829,26 @@ export function equipmentScore(
   teamContext?: TeamContext,
   tagLookup?: Map<string, number>
 ): number {
-  const role = equipRole(character)
   const base = EQUIP_RARITY_SCORE[equip.rarityLabel] ?? 20
   let effects = 0
-  for (const slot of equip.slots ?? []) {
-    let best = 0
-    for (const option of slot.options) {
-      best = Math.max(best, slotScore(option, role, context, mode, teamContext, tagLookup))
-    }
-    effects += Math.min(best, 90)
+  for (const slot of equipmentSlots(equip, character, context, mode, teamContext, tagLookup)) {
+    effects += Math.min(slot.score, 90)
   }
   return base + effects * 0.5
 }
 
-/** Texto corto que explica el bonus condicional aprovechado por el equipo (ej. "×3 Saiyajin"). */
+/** Texto corto del primer condicional que el equipo Sí aprovecha (ej. "×3 Saiyajin"). */
 export function teamConditionalHint(
   equip: Equipment,
   teamContext?: TeamContext,
   tagLookup?: Map<string, number>
 ): string | null {
   if (!teamContext || !tagLookup) return null
-  for (const slot of equip.slots ?? []) {
-    for (const option of slot.options) {
-      for (const match of option.matchAll(SCALE_CONDITIONAL_RE)) {
-        const id = resolveTagName(match[3], tagLookup)
-        const count = id !== undefined ? teamContext.tagCounts.get(id) ?? 0 : 0
-        if (count > 0) return `×${Math.min(count, teamContext.count)} ${match[3].trim()}`
-      }
-      for (const match of option.matchAll(FLAT_CONDITIONAL_RE)) {
-        const id = resolveTagName(match[2], tagLookup)
-        const carriers = id !== undefined ? teamContext.tagCounts.get(id) ?? 0 : 0
-        if (carriers > (match[3] ? 1 : 0)) return `✓ ${match[2].trim()}`
-      }
+  const holder = teamContext.characters[0]
+  if (!holder) return null
+  for (const slot of equipmentSlots(equip, holder, 'core', 'attack', teamContext, tagLookup)) {
+    for (const effect of slot.effects) {
+      if (effect.conditional && effect.applies) return effect.detail
     }
   }
   return null
@@ -698,26 +869,21 @@ export function equipmentHighlights(
   tagLookup?: Map<string, number>
 ): EquipmentHighlights {
   const role = equipRole(character)
-  const slots: string[] = []
+  const slotInfos = equipmentSlots(equip, character, context, mode, teamContext, tagLookup)
+  const slots = slotInfos.map((slot) => slot.text)
   const effects: { text: string; value: number }[] = []
 
-  for (const slot of equip.slots ?? []) {
-    let bestOption = ''
-    let bestValue = -1
-    for (const option of slot.options) {
-      const value = slotScore(option, role, context, mode, teamContext, tagLookup)
-      if (value > bestValue) {
-        bestValue = value
-        bestOption = option
-      }
-    }
-    if (bestValue > 0) slots.push(bestOption)
-    for (const option of slot.options) {
-      for (const effect of parseEffects(option)) {
-        const value = effect.max * effectWeight(effect.name, role, context, mode)
-        const range = effect.min && effect.min !== effect.max ? `${effect.min}–${effect.max}%` : `+${effect.max}%`
-        effects.push({ text: `${effect.name} ${range}`, value })
-      }
+  for (const slot of slotInfos) {
+    for (const effect of slot.effects) {
+      const value = effect.effective * effectWeight(effect.name, role, context, mode)
+      const range =
+        effect.min && effect.min !== effect.max ? `${effect.min}–${effect.max}%` : `+${effect.max}%`
+      const suffix = effect.conditional
+        ? effect.applies
+          ? ` (✓ ${effect.detail})`
+          : ' (no aplica)'
+        : ''
+      effects.push({ text: `${effect.name} ${range}${suffix}`, value })
     }
   }
 
@@ -726,7 +892,7 @@ export function equipmentHighlights(
     primary: effects[0]?.text ?? equip.desc ?? '',
     secondary: effects
       .slice(1, 3)
-      .map((e) => e.text)
+      .map((effect) => effect.text)
       .join(' · '),
     slots
   }
