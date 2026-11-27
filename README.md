@@ -95,8 +95,9 @@ archivo compatible con “Mi Caja” de dblegends.net.
 - **Equipamiento**: sólo el **núcleo (3)** se equipa; el banquillo no entra en combate y sólo aporta su
   Habilidad Z. Los efectos se parsean por separado (rango incluido), se prioriza el ataque del rol (físico o
   energía según sus stats) y se ordenan según el **equipo concreto**: los efectos condicionales
-  (*“por cada luchador de etiqueta X”*) escalan con los portadores reales del equipo. Muestra hasta
-  **3 equipos que ya tienes + 3 alternativas** por personaje, con requisito y el multiplicador si aplica.
+  (*“por cada luchador de etiqueta X”*) escalan con los portadores reales del equipo. Muestra los
+  **6 mejores equipos para ese personaje** (propios o no) en una sola lista ordenada por rendimiento,
+  con requisito, estado (“ya lo tienes” / “te falta”) y el multiplicador si aplica.
   Selector **“Mejor ataque” / “Mejor equilibrio”**.
 - **Ability Bonus (estimado)**: se parsean las Habilidades Z (tags/episodios que buffean y valor por nivel,
   con nivel según estrellas) y se suman los buffs que cada miembro aplica a sus aliados; el Líder recibe todo.

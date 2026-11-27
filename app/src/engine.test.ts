@@ -592,3 +592,31 @@ describe('pista de condicional para la UI', () => {
     expect(teamConditionalHint(equip, ctx, lookup)).toBe('×2 Saiyajin')
   })
 })
+
+describe('lista única de equipamiento (top)', () => {
+  it('mezcla propios y faltantes ordenados por puntuación', () => {
+    const unit = makeChar(1, [8])
+    const mk = (id: number, rarityLabel: string, rarity: number): Equipment => ({
+      id,
+      name: `Equip ${id}`,
+      rarity,
+      rarityLabel,
+      icon: '',
+      conditions: [],
+      conditionLabels: [],
+      exclusive: false,
+      awakenedFrom: 0,
+      release: 0,
+      slots: [{ n: 1, options: ['Ataque físico básico 10.00% ~ 20.00%'] }],
+      obtain: []
+    })
+    const equips = [mk(1, 'Platinum', 5), mk(2, 'Unique', 4), mk(3, 'Gold', 3), mk(4, 'Silver', 2)]
+    const rec = recommendEquipment(unit, equips, {
+      '2': { count: 1, bestRank: 9, bestScore: 99 },
+      '4': { count: 1, bestRank: 5, bestScore: 80 }
+    })
+    expect(rec.top.map((pick) => pick.equip.id)).toEqual([1, 2, 3, 4])
+    expect(rec.top[0].owned).toBeNull()
+    expect(rec.top[1].owned).not.toBeNull()
+  })
+})

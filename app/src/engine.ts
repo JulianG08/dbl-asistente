@@ -744,6 +744,7 @@ export interface EquipmentRecommendation {
   context: EquipContext
   owned: EquipmentPick[]
   missing: EquipmentPick[]
+  top: EquipmentPick[]
   best: EquipmentPick[]
   excluded: number
 }
@@ -782,7 +783,16 @@ export function recommendEquipment(
     (e) => hasUnknownRequirement(e) && !equipmentUsableBy(e, character)
   ).length
 
-  return { character, role: equipRole(character), context, owned, missing, best: ranked.slice(0, 3), excluded }
+  return {
+    character,
+    role: equipRole(character),
+    context,
+    owned,
+    missing,
+    top: ranked.slice(0, 6),
+    best: ranked.slice(0, 3),
+    excluded
+  }
 }
 
 export function teamEquipment(

@@ -552,8 +552,7 @@ function EquipmentForCharacter({
   teamContext?: TeamContext
   tagLookup?: Map<string, number>
 }) {
-  const ownedPicks = rec.owned.slice(0, 3)
-  const missingPicks = rec.missing.slice(0, 3)
+  const picks = rec.top.slice(0, 6)
 
   return (
     <div class="rounded-lg border border-line bg-panel/60 p-2.5">
@@ -565,24 +564,13 @@ function EquipmentForCharacter({
         </span>
         {rec.context === 'bench' ? <span class="chip chip-muted">banquillo</span> : null}
       </div>
-      {ownedPicks.length || missingPicks.length ? (
+      {picks.length ? (
         <div class="space-y-1.5">
-          {ownedPicks.map((p) => (
+          {picks.map((p) => (
             <EquipRow
-              key={`own-${p.equip.id}`}
+              key={p.equip.id}
               pick={p}
-              owned
-              character={rec.character}
-              context={rec.context}
-              mode={mode}
-              teamContext={teamContext}
-              tagLookup={tagLookup}
-            />
-          ))}
-          {missingPicks.map((p) => (
-            <EquipRow
-              key={`best-${p.equip.id}`}
-              pick={p}
+              owned={Boolean(p.owned)}
               character={rec.character}
               context={rec.context}
               mode={mode}
